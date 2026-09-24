@@ -92,7 +92,7 @@ Item {
     hideSource: true
     visible: false
     live: root.animating
-    textureSize: Qt.size(Math.max(1, Math.round(root.width / 2)), Math.max(1, Math.round(root.height / 2)))
+    // The default texture size follows the window pixel ratio, including HiDPI displays.
   }
 
   Item {

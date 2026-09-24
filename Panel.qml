@@ -845,8 +845,12 @@ Panel {
                 fontFamily: root.fontFamily
                 width: (preferenceGrid.width - preferenceGrid.spacing * (preferenceGrid.columns - 1)) / preferenceGrid.columns
                 label: root.tr("Språk")
-                value: root.language
-                options: [{ value: "nb", label: "Norsk bokmål" }, { value: "en", label: "English" }]
+                value: root.preferences.languageMode
+                options: [
+                  { value: "system", label: root.tr("Standard (systemspråk)") },
+                  { value: "nb", label: "Norsk bokmål" },
+                  { value: "en", label: "English" }
+                ]
                 enabled: !preferencesSaveProc.running
                 onChanged: function(value) { root.savePreference("language", value) }
               }

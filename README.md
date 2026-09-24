@@ -56,7 +56,8 @@ Settings include Norwegian Bokmål/English, metric (°C, km/h, mm) or imperial
 daily/hourly forecasts, wind, precipitation, and notification summary. Forecast
 calculations keep MET's original units. New installations use Norwegian for a
 Norwegian system locale and English otherwise, with metric units and animations
-enabled. Explicit language preferences override the locale.
+enabled. “Default (system language)” follows the system locale, falling back to
+English for unsupported languages. Choosing Norwegian or English overrides it.
 
 Automatic positioning is off by default. Enabling “Use location data” uses
 GeoClue, reverse-geocodes through OpenStreetMap Nominatim, and requests weather
@@ -69,7 +70,7 @@ Preferences are stored directly on this widget's entry in
 controls call `omarchy bar set <installed-plugin-id> <key> <value> --json`, allowing
 the shell to update its live state and persist the change. The installed ID is
 read from `manifest.json`, so publishing under another namespace does not require
-changing the persistence code. The supported keys are `language` (`nb` or `en`),
+changing the persistence code. The supported keys are `language` (`system`, `nb`, or `en`; defaults to `system`),
 `units` (`metric` or `imperial`), `automaticLocation`, and `animations`.
 `refreshMinutes` and `locationRefreshMinutes` remain optional widget settings
 (30 and 15 minutes by default).
@@ -90,7 +91,8 @@ script callers can use `MET_WEATHER_USER_AGENT` and `WEATHER_LOCATION_USER_AGENT
 See [MET's identification requirements](https://api.met.no/doc/TermsOfService)
 and [Nominatim's usage policy](https://operations.osmfoundation.org/policies/nominatim/).
 
-`WeatherBackground.qml` renders at half resolution and 20 updates per second,
+`WeatherBackground.qml` renders at native display resolution (including HiDPI
+scaling) and 20 updates per second,
 with a light blur, translucent theme overlay, and a soft shadow behind header
 text and icons. Motion stops when the popup is closed or the
 header is scrolled away. Missing/unknown weather or shader errors retain the

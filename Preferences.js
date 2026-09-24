@@ -2,8 +2,11 @@
 function fromSettings(value, locale) {
   value = value && typeof value === "object" && !Array.isArray(value) ? value : {}
   var defaultLanguage = /^(nb|nn|no)(_|-|$)/i.test(String(locale || "")) ? "nb" : "en"
+  // Keep the selected mode separate so the UI can return to following the system.
+  var languageMode = value.language === "nb" || value.language === "en" ? value.language : "system"
   return {
-    language: value.language === "nb" || value.language === "en" ? value.language : defaultLanguage,
+    languageMode: languageMode,
+    language: languageMode === "system" ? defaultLanguage : languageMode,
     units: value.units === "imperial" ? "imperial" : "metric",
     automaticLocation: value.automaticLocation === true,
     animations: value.animations !== false
@@ -29,6 +32,7 @@ var english = {
   "Kunne ikke lagre innstillingene": "Could not save settings",
   "Kunne ikke lese innstillingene": "Could not read settings",
   "Språk": "Language",
+  "Standard (systemspråk)": "Default (system language)",
   "Enheter": "Units",
   "Metrisk (°C, km/t, mm)": "Metric (°C, km/h, mm)",
   "Imperial (°F, mph, in)": "Imperial (°F, mph, in)",
