@@ -764,6 +764,11 @@ Panel {
                 placeholderText: root.tr("Søk etter sted")
                 foreground: root.foreground
                 font.family: root.fontFamily
+                Binding {
+                  target: locationField.background
+                  property: "radius"
+                  value: Style.space(7)
+                }
                 onTextEdited: {
                   root.clearSearch()
                   root.settingsError = ""
@@ -840,7 +845,7 @@ Panel {
               width: parent.width
               columns: width < Style.space(420) ? 1 : 2
               spacing: Style.space(12)
-              Dropdown {
+              WeatherDropdown {
                 id: languageDropdown
                 fontFamily: root.fontFamily
                 width: (preferenceGrid.width - preferenceGrid.spacing * (preferenceGrid.columns - 1)) / preferenceGrid.columns
@@ -854,7 +859,7 @@ Panel {
                 enabled: !preferencesSaveProc.running
                 onChanged: function(value) { root.savePreference("language", value) }
               }
-              Dropdown {
+              WeatherDropdown {
                 id: unitsDropdown
                 fontFamily: root.fontFamily
                 width: (preferenceGrid.width - preferenceGrid.spacing * (preferenceGrid.columns - 1)) / preferenceGrid.columns

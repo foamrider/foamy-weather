@@ -123,6 +123,12 @@ Its only changes are importing `qs.Ui` and exposing the card radius and surface
 color. When updating Omarchy, compare this file with the packaged original and
 carry over focus, geometry, dismissal, and popup-coordination fixes.
 
+The location input and language/unit controls use a 7-pixel corner radius.
+`WeatherDropdown.qml` adapts Omarchy's `Ui/Dropdown.qml` to apply that radius to
+the trigger, menu, and option highlights while retaining its keyboard and focus
+behavior. Compare it with the packaged original when updating Omarchy; its
+upstream notice is retained in `LICENSE-OMARCHY`.
+
 `WeatherConditionIcon.qml` uses the bundled colorful Fill SVGs from
 [Meteocons](https://github.com/basmilius/meteocons), `@meteocons/svg-static` 0.1.0.
 The unmodified files in `icons/` and `LICENSE-METEOCONS` come from that release's
