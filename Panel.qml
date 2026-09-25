@@ -1088,7 +1088,9 @@ Panel {
                   WeatherAction {
                     id: refreshButton
                     iconName: "refresh-cw"
-                    label: root.loading ? root.tr("Oppdaterer…") : (!root.networkReady ? root.tr("Venter på nettverk…") : root.tr("Oppdater"))
+                    width: Style.space(26); height: Style.space(26)
+                    tooltipText: root.loading ? root.tr("Oppdaterer…") : (!root.networkReady ? root.tr("Venter på nettverk…") : root.tr("Oppdater"))
+                    spinning: root.opened && root.loading
                     foreground: root.secondaryForeground
                     enabled: !root.loading && root.networkReady
                     onClicked: root.refresh(true)

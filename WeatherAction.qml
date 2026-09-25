@@ -6,6 +6,7 @@ Rectangle {
   id: root
   property string iconName: "settings"
   property string label: ""
+  property bool spinning: false
   property string tooltipText: ""
   property real iconSize: Style.space(15)
   property Item keyTarget: null
@@ -31,7 +32,21 @@ Rectangle {
     id: content
     anchors.centerIn: parent
     spacing: Style.space(7)
-    WeatherIcon { width: root.iconSize; height: width; color: root.foreground; name: root.iconName; anchors.verticalCenter: parent.verticalCenter }
+    WeatherIcon {
+      id: actionIcon
+      visible: root.iconName !== ""
+      width: root.iconSize
+      height: width
+      color: root.foreground
+      name: root.iconName
+      anchors.verticalCenter: parent.verticalCenter
+      // Animate only the glyph; the hover and focus surface stays stationary.
+      RotationAnimation on rotation {
+        running: root.spinning
+        from: 0; to: 360; duration: 800; loops: Animation.Infinite
+        onStopped: actionIcon.rotation = 0
+      }
+    }
     Text { visible: root.label !== ""; text: root.label; textFormat: Text.PlainText; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.space(11) }
   }
   MouseArea { id: mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.clicked() }
