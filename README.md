@@ -2,9 +2,12 @@
 
 Current weather and a three-day forecast.
 
-![Foamy Weather screenshot](screenshot.png)
+![Foamy Weather screenshot](preview.png)
 
 ## Install
+
+Requires Omarchy Quattro, Bash, `curl`, `jq`, `awk`, GNU coreutils, and
+internet access for forecasts and location search.
 
 For automatic location, install GeoClue (`geoclue`).
 Disable another weather widget before enabling this one.
@@ -22,6 +25,20 @@ omarchy plugin add https://github.com/foamrider/foamy-weather.git --enable
 Left-click opens the forecast, middle-click refreshes, and right-click shows a
 summary. Select a day to see its hourly forecast. **Use location data** enables
 optional automatic positioning; it is off by default.
+
+## Remove
+
+```sh
+omarchy plugin remove foamy.weather
+```
+
+When removing an enabled replacement, Omarchy restores `omarchy.weather`.
+Location settings, forecast preferences, and cached forecasts remain on disk.
+Some settings are shared with the stock weather plugin; retain them if you
+intend to use it. GeoClue remains installed.
+
+Omarchy manages the plugin entry in `shell.json`. Packages and data outside
+the plugin directory are retained unless you remove them separately.
 
 ## License
 
