@@ -8,6 +8,9 @@ mode=${3:-}
 user_agent=${MET_WEATHER_USER_AGENT:-"foamy-weather/1.1.0 (+https://github.com/foamrider/foamy-weather)"}
 cache_root=${XDG_CACHE_HOME:-"$HOME/.cache"}/omarchy-weather
 cache_max_age=${MET_WEATHER_CACHE_MAX_AGE:-1800}
+# Bound decoded responses, including caches written by older plugin versions.
+forecast_max_bytes=$((2 * 1024 * 1024))
+sun_max_bytes=$((64 * 1024))
 
 json_error() {
   jq -cn --arg error "$1" '{error: $error}'
@@ -21,7 +24,40 @@ valid_coordinates() {
   }'
 }
 
-for dependency in curl jq date stat awk; do
+file_is_bounded() {
+  local file=$1 limit=$2 size
+  [[ -f $file ]] || return 1
+  size=$(stat -c %s -- "$file") || return 1
+  ((size > 0 && size <= limit))
+}
+
+valid_forecast() {
+  file_is_bounded "$1" "$forecast_max_bytes" &&
+    jq -se 'length == 1 and (.[0] | .type == "Feature" and
+      (.properties.timeseries | type == "array" and length > 0))' "$1" >/dev/null 2>&1
+}
+
+valid_sun() {
+  file_is_bounded "$1" "$sun_max_bytes" &&
+    jq -se 'length == 1 and (.[0] |
+      (.properties.sunrise.time | type == "string" and length > 0) and
+      (.properties.sunset.time | type == "string" and length > 0))' "$1" >/dev/null 2>&1
+}
+
+download_bounded() {
+  local url=$1 output=$2 limit=$3 timeout=$4
+  # Limit curl's decoded stdout independently of headers and compression. The
+  # extra byte detects overflow even when the truncated prefix is valid JSON.
+  # pipefail also rejects HTTP, transport, decompression, and write failures.
+  if curl --fail --silent --show-error --compressed --connect-timeout 3 --max-time "$timeout" \
+    --user-agent "$user_agent" "$url" 2>/dev/null | head -c "$((limit + 1))" >"$output"; then
+    file_is_bounded "$output" "$limit"
+  else
+    return 1
+  fi
+}
+
+for dependency in curl jq date stat awk head; do
   if ! command -v "$dependency" >/dev/null; then
     json_error "Mangler: $dependency"
     exit 0
@@ -50,7 +86,7 @@ sun_bundle=$(mktemp "$cache_root/.sun-bundle.XXXXXX")
 trap 'rm -f "$forecast_temp" "$sun_temp" "$sun_bundle"' EXIT
 
 cache_is_fresh=false
-if [[ -f $forecast_cache ]] && jq -e '.type == "Feature" and (.properties.timeseries | length > 0)' "$forecast_cache" >/dev/null 2>&1; then
+if valid_forecast "$forecast_cache"; then
   cache_age=$(($(date +%s) - $(stat -c %Y "$forecast_cache")))
   if (( cache_age < cache_max_age )); then
     cache_is_fresh=true
@@ -60,12 +96,11 @@ fi
 stale=false
 if [[ $mode == --force || $cache_is_fresh == false ]]; then
   forecast_url="https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=${latitude}&lon=${longitude}"
-  if curl --fail --silent --show-error --compressed --connect-timeout 3 --max-time 10 \
-    --user-agent "$user_agent" "$forecast_url" -o "$forecast_temp" 2>/dev/null \
-    && jq -e '.type == "Feature" and (.properties.timeseries | length > 0)' "$forecast_temp" >/dev/null 2>&1; then
+  if download_bounded "$forecast_url" "$forecast_temp" "$forecast_max_bytes" 10 \
+    && valid_forecast "$forecast_temp"; then
     chmod 600 "$forecast_temp"
     mv "$forecast_temp" "$forecast_cache"
-  elif [[ -f $forecast_cache ]] && jq -e '.type == "Feature" and (.properties.timeseries | length > 0)' "$forecast_cache" >/dev/null 2>&1; then
+  elif valid_forecast "$forecast_cache"; then
     # A failed refresh must not replace useful conditions with an empty panel.
     stale=true
   else
@@ -79,17 +114,21 @@ for offset in 0 1 2; do
   forecast_date=$(date -d "+${offset} day" +%Y-%m-%d)
   sun_cache="$cache_root/sun-${cache_key}-${forecast_date}.json"
 
-  if [[ ! -f $sun_cache ]] || ! jq -e '.properties.sunrise.time and .properties.sunset.time' "$sun_cache" >/dev/null 2>&1; then
+  sun_valid=false
+  if valid_sun "$sun_cache"; then
+    sun_valid=true
+  else
     sun_url="https://api.met.no/weatherapi/sunrise/3.0/sun?lat=${latitude}&lon=${longitude}&date=${forecast_date}"
-    if curl --fail --silent --show-error --compressed --connect-timeout 3 --max-time 8 \
-      --user-agent "$user_agent" "$sun_url" -o "$sun_temp" 2>/dev/null \
-      && jq -e '.properties.sunrise.time and .properties.sunset.time' "$sun_temp" >/dev/null 2>&1; then
+    if download_bounded "$sun_url" "$sun_temp" "$sun_max_bytes" 8 \
+      && valid_sun "$sun_temp"; then
       chmod 600 "$sun_temp"
       mv "$sun_temp" "$sun_cache"
+      sun_valid=true
     fi
   fi
 
-  if [[ -f $sun_cache ]]; then
+  # An invalid old cache must not reach jq when its replacement also failed.
+  if [[ $sun_valid == true ]]; then
     jq -c --arg date "$forecast_date" '{
       date: $date,
       sunrise: (.properties.sunrise.time // ""),

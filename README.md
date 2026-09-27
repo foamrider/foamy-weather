@@ -26,6 +26,10 @@ Left-click opens the forecast, middle-click refreshes, and right-click shows a
 summary. Select a day to see its hourly forecast. **Use location data** enables
 optional automatic positioning; it is off by default.
 
+Forecast responses are limited to 2 MiB and each sunrise response to 64 KiB
+after decompression. Invalid or oversized responses are rejected; a valid
+cached forecast remains available when a refresh fails.
+
 ## Remove
 
 ```sh
