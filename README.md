@@ -30,6 +30,8 @@ Forecast responses are limited to 2 MiB and each sunrise response to 64 KiB
 after decompression. Invalid or oversized responses are rejected; a valid
 cached forecast remains available when a refresh fails.
 
+Forecast and automatic-location requests wait briefly after connection and retry temporary failures up to three times with increasing delays. Reconnecting resets the retry budget and resumes refreshes automatically; existing forecast data remains visible during an outage.
+
 ## Remove
 
 ```sh

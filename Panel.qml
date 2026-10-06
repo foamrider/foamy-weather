@@ -74,6 +74,7 @@ Panel {
   property string errorMessage: ""
   property bool loading: false
   property int retries: 0
+  property int locationRetries: 0
   property int selectedDayIndex: 0
   property date now: new Date()
 
@@ -116,8 +117,24 @@ Panel {
   readonly property int locationRefreshMinutes: Math.max(5, parseInt(setting("locationRefreshMinutes", 15), 10) || 15)
   // WARP can leave NetworkManager's external probe at Limited while routed
   // internet access is working, so only block truly offline/portal states.
-  readonly property bool networkReady: Networking.connectivity === NetworkConnectivity.Full
+  readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full
     || Networking.connectivity === NetworkConnectivity.Limited
+  property bool networkSettled: false
+  readonly property bool networkReady: networkConnected && networkSettled
+  onNetworkConnectedChanged: networkSettled = false
+  Timer {
+    // NetworkManager can report a connection before DNS and routes are usable.
+    interval: 2000
+    running: root.networkConnected && !root.networkSettled
+    onTriggered: root.networkSettled = true
+  }
+
+  onNetworkReadyChanged: {
+    retryTimer.stop()
+    locationRetryTimer.stop()
+    retries = 0
+    locationRetries = 0
+  }
 
   onCoordinateQueryChanged: {
     retries = 0
@@ -127,6 +144,8 @@ Panel {
   }
 
   onAutomaticLocationChanged: {
+    locationRetryTimer.stop()
+    locationRetries = 0
     locationProc.running = false
     dynamicLocationError = ""
     if (automaticLocation) Qt.callLater(function() { root.resolveLocation(false) })
@@ -219,7 +238,8 @@ Panel {
 
   function scheduleRetry() {
     loading = false
-    if (retries >= 3) return
+    if (!networkReady || retries >= 3) return
+    retryTimer.interval = 2500 * Math.pow(2, retries)
     retries++
     retryTimer.restart()
   }
@@ -359,8 +379,7 @@ Panel {
 
   Timer {
     interval: root.refreshMinutes * 60 * 1000
-    // Starting on Full connectivity avoids accepting stale cache before
-    // NetworkManager finishes bringing the boot-time connection online.
+    // Start after the connection settles, including Limited connectivity on VPNs.
     running: root.networkReady
     repeat: true
     triggeredOnStart: true
@@ -379,6 +398,11 @@ Panel {
     id: retryTimer
     interval: 2500
     onTriggered: root.refresh(true)
+  }
+
+  Timer {
+    id: locationRetryTimer
+    onTriggered: root.resolveLocation(true)
   }
 
   Timer {
@@ -430,10 +454,17 @@ Panel {
         if (resolved.latitude === null || resolved.longitude === null) {
           root.dynamicLocationError = resolved.error || "Kunne ikke lese automatisk posisjon"
           if (!root.hasCoordinates) root.errorMessage = root.dynamicLocationError
+          // Automatic location needs its own recovery; weather cannot load without it.
+          if (root.networkReady && root.automaticLocation && root.locationRetries < 3) {
+            locationRetryTimer.interval = 2500 * Math.pow(2, root.locationRetries++)
+            locationRetryTimer.restart()
+          }
           return
         }
 
         root.dynamicLocationState = resolved
+        root.locationRetries = 0
+        locationRetryTimer.stop()
         root.dynamicLocationError = ""
         if (root.automaticLocation) root.errorMessage = ""
       }
