@@ -568,13 +568,15 @@ Panel {
             // Keep the theme background available before weather data or shader readiness.
             Canvas {
               id: headerBackground
+              readonly property real cornerRadius: Math.max(0, Math.min(width / 2, height, panel.cornerRadius - Border.top(panel.borderSpec)))
+              onCornerRadiusChanged: requestPaint()
               anchors.fill: parent
               onWidthChanged: requestPaint()
               onHeightChanged: requestPaint()
               onPaint: {
                 var ctx = getContext("2d")
                 ctx.reset()
-                var radius = Style.space(13)
+                var radius = cornerRadius
                 ctx.beginPath()
                 ctx.moveTo(radius, 0); ctx.lineTo(width - radius, 0)
                 ctx.quadraticCurveTo(width, 0, width, radius)
@@ -601,7 +603,7 @@ Panel {
               active: root.preferences.animations && root.opened && weatherHero.y + weatherHero.height > weatherScroll.contentY
               surfaceColor: Color.popups.background
               lightTheme: root.lightTheme
-              cornerRadius: Style.space(13)
+              cornerRadius: Math.max(0, panel.cornerRadius - Border.top(panel.borderSpec))
             }
 
             Column {
@@ -677,7 +679,7 @@ Panel {
               anchors.rightMargin: Style.space(16)
               implicitWidth: Style.space(32)
               implicitHeight: Style.space(32)
-              radius: Style.space(7)
+              radius: Style.cornerRadius * 2
               iconSize: Style.space(16)
               iconName: "settings"
               tooltipText: root.tr("Innstillinger")
@@ -767,7 +769,7 @@ Panel {
                 Binding {
                   target: locationField.background
                   property: "radius"
-                  value: Style.space(7)
+                  value: Style.cornerRadius * 2
                 }
                 onTextEdited: {
                   root.clearSearch()
@@ -801,7 +803,7 @@ Panel {
                 required property int index
                 width: parent.width
                 height: suggestionText.implicitHeight + Style.space(12)
-                radius: Style.cornerRadius
+                radius: Style.cornerRadius * 2
                 color: index === root.suggestionIndex
                   ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent"
 
@@ -889,7 +891,7 @@ Panel {
             visible: !root.editingLocation && root.errorMessage !== ""
             width: parent.width
             height: errorRow.implicitHeight + Style.space(14)
-            radius: Style.cornerRadius
+            radius: Style.cornerRadius * 2
             color: Style.hoverFillFor(root.foreground, root.report && root.report.stale ? Color.accent : root.urgent)
 
             Row {
@@ -979,7 +981,7 @@ Panel {
                     required property int index
                     width: (forecastGrid.width - forecastGrid.spacing * (forecastGrid.columns - 1)) / forecastGrid.columns
                     height: Style.space(100)
-                    radius: Style.space(8)
+                    radius: Style.cornerRadius * 2
                     color: index === root.selectedDayIndex ? root.selectedCardColor : root.cardColor
                     clip: true
                     Item {
