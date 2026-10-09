@@ -32,6 +32,11 @@ cached forecast remains available when a refresh fails.
 
 Forecast and automatic-location requests wait briefly after connection and retry temporary failures up to three times with increasing delays. Reconnecting resets the retry budget and resumes refreshes automatically; existing forecast data remains visible during an outage.
 
+Coordinates travel between processes through stdin rather than command-line
+arguments. Cache names use opaque hashes, with existing caches read through
+private file descriptors. Location and forecast caches remain owner-only.
+Coordinates are still sent to MET Norway and, for automatic place names, OpenStreetMap.
+
 ## Remove
 
 ```sh

@@ -220,11 +220,13 @@ Panel {
 
     loading = true
     errorMessage = ""
-    weatherProc.command = force
-      ? [fetchScript, String(configuredLocationState.latitude), String(configuredLocationState.longitude), "--force"]
-      : [fetchScript, String(configuredLocationState.latitude), String(configuredLocationState.longitude)]
+    weatherProc.command = force ? [fetchScript, "--force"] : [fetchScript]
+    // Process arguments are visible to other users through procfs; use the private pipe.
+    weatherProc.requestInput = String(configuredLocationState.latitude) + "\n"
+      + String(configuredLocationState.longitude) + "\n"
     if (requestUserAgent)
       weatherProc.command = ["env", "MET_WEATHER_USER_AGENT=" + requestUserAgent].concat(weatherProc.command)
+    weatherProc.stdinEnabled = true
     weatherProc.running = true
   }
 
@@ -254,9 +256,12 @@ Panel {
     var body = currentDescription + " · " + currentTemperature
       + "\n" + tr("Vind") + " " + wind + (windDirection ? " " + windDirection : "")
       + " · " + tr("Luftfuktighet") + " " + (current.humidity === null ? "—" : current.humidity + "%")
+    // A failed reverse lookup can leave a coordinate pair as the location label.
+    var headlineLocation = configuredLocation || root.tr("valgt sted")
+    if (/^-?[0-9.]+,\s*-?[0-9.]+$/.test(headlineLocation)) headlineLocation = root.tr("valgt sted")
     Quickshell.execDetached([
       "omarchy-notification-send", "-g", conditionIcon,
-      root.tr("Været i ") + (configuredLocation || root.tr("valgt sted")), body
+      root.tr("Været i ") + headlineLocation, body
     ])
   }
 
@@ -299,10 +304,10 @@ Panel {
   function pickSuggestion(suggestion) {
     if (!suggestion || savingLocation || automaticLocation) return
     savingLocation = true
-    locationSaveProc.command = [
-      locationScript, "--set", suggestion.name,
-      String(suggestion.latitude), String(suggestion.longitude)
-    ]
+    locationSaveProc.command = [locationScript, "--set"]
+    locationSaveProc.requestInput = JSON.stringify({ name: suggestion.name,
+      latitude: suggestion.latitude, longitude: suggestion.longitude }) + "\n"
+    locationSaveProc.stdinEnabled = true
     locationSaveProc.running = true
   }
 
@@ -413,6 +418,11 @@ Panel {
 
   Process {
     id: weatherProc
+    property string requestInput: ""
+    onStarted: {
+      write(requestInput)
+      stdinEnabled = false
+    }
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -497,6 +507,11 @@ Panel {
 
   Process {
     id: locationSaveProc
+    property string requestInput: ""
+    onStarted: {
+      write(requestInput)
+      stdinEnabled = false
+    }
     onExited: function(exitCode) {
       if (exitCode !== 0) {
         root.savingLocation = false

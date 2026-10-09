@@ -47,10 +47,27 @@ test("forecast and location requests resume after readiness and do not overlap t
   assert.equal(c.weatherProc.running, true); assert.equal(c.locationProc.running, true);
   const command = c.weatherProc.command; c.refresh(true);
   assert.equal(c.weatherProc.command, command);
+  assert.deepEqual(Array.from(command), ["/fixture/fetch", "--force"]);
+  assert.equal(c.weatherProc.requestInput, "12\n34\n");
+  assert.equal(c.weatherProc.stdinEnabled, true);
 });
 test("forecast retry bursts are bounded with increasing delays", () => {
   const c = fixture(); c.networkReady = true;
   for (const interval of [2500,5000,10000]) {c.scheduleRetry();assert.equal(c.retryTimer.interval,interval);}
   c.scheduleRetry(); assert.equal(c.retryTimer.starts,3);
   c.retries=0;c.networkReady=false;c.scheduleRetry();assert.equal(c.retryTimer.starts,3);
+});
+
+test("notification summaries keep coordinate fallback labels out of command arguments", () => {
+  const calls = [];
+  const c = controller({ current:{windSpeed:3,windDirection:90,humidity:50},
+    configuredLocation:"12.35, -56.79",currentDescription:"Cloudy",currentTemperature:"15°C",
+    conditionIcon:"cloud",tr:value=>value,windSpeed:value=>String(value),windLabel:()=>"E",
+    Quickshell:{execDetached:args=>calls.push(Array.from(args))},
+  }, ["notifySummary"]);
+  c.notifySummary();
+  assert.equal(calls[0].join(" ").includes("12.35"), false);
+  assert.equal(calls[0].join(" ").includes("-56.79"), false);
+  c.configuredLocation="Example Town";c.notifySummary();
+  assert.equal(calls[1][3], "Været i Example Town");
 });

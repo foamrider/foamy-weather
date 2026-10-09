@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const { execFile } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const fs = require("node:fs/promises");
 const http = require("node:http");
 const os = require("node:os");
@@ -66,12 +67,8 @@ async function fixture(t) {
   // Redirect only the endpoint; the production script still runs real curl,
   // decompression, byte limiting, jq, and cache promotion.
   const wrappers = {
-    curl: `args=()
-for arg in "$@"; do
-  case "$arg" in https://api.met.no/*) arg="$WEATHER_TEST_ORIGIN\${arg#https://api.met.no}" ;; esac
-  args+=("$arg")
-done
-exec "$WEATHER_TEST_CURL" -q --noproxy '*' "\${args[@]}"
+    curl: `sed "s|https://api.met.no|$WEATHER_TEST_ORIGIN|g" |
+  "$WEATHER_TEST_CURL" -q --noproxy '*' "$@"
 `,
     jq: `for arg in "$@"; do
   [[ -f $arg ]] || continue
@@ -95,11 +92,14 @@ exec "$WEATHER_TEST_RM" "$@"
     env[`WEATHER_TEST_${name.toUpperCase()}`] = (await exec("bash", ["-c", `command -v ${name}`])).stdout.trim();
     await fs.writeFile(path.join(bin, name), `#!/bin/bash\nset -euo pipefail\n${body}`, { mode: 0o755 });
   }
-  const forecastPath = path.join(cache, "forecast-complete-12.0000_34.0000.json");
+  const cacheKey = createHash("sha256").update("12.0000_34.0000").digest("hex");
+  const forecastPath = path.join(cache, `forecast-complete-${cacheKey}.json`);
   return { responses, requests, cache, forecastPath,
     async run(force = false) {
-      const { stdout } = await exec("bash", [script, "12", "34", ...(force ? ["--force"] : [])],
+      const request = exec("bash", [script, ...(force ? ["--force"] : [])],
         { env, timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
+      request.child.stdin.end("12\n34\n");
+      const { stdout } = await request;
       assert.equal(await fs.access(path.join(root, "oversized-parse")).then(() => true, () => false), false,
         "oversized files must never reach jq");
       const removed = await fs.readFile(path.join(root, "removed"), "utf8");
@@ -115,7 +115,7 @@ exec "$WEATHER_TEST_RM" "$@"
     async seedSun(body) {
       for (const offset of [0, 1, 2]) {
         const date = (await exec("date", ["-d", `+${offset} day`, "+%Y-%m-%d"])).stdout.trim();
-        await fs.writeFile(path.join(cache, `sun-12.0000_34.0000-${date}.json`), body);
+        await fs.writeFile(path.join(cache, `sun-${cacheKey}-${date}.json`), body);
       }
     }
   };

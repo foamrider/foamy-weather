@@ -35,7 +35,7 @@ export WEATHER_LOCATION_RUNTIME_DIR="$test_root/runtime"
 export WEATHER_GEOCLUE_COMMAND="$mock_bin/where-am-i"
 location_file="$XDG_CONFIG_HOME/omarchy/weather-location.local.json"
 
-"$location_writer" --set Example 12.34 56.78
+"$location_writer" --set <<<'{"name":"Example","latitude":12.34,"longitude":56.78}'
 manual=$(cat "$location_file")
 jq -e '
   .name == "Example"
@@ -61,8 +61,8 @@ jq -e '.error == "Kunne ikke finne automatisk posisjon"' <<<"$unavailable" >/dev
   || fail "unavailable GeoClue must report an error"
 
 # Invalid coordinates and failed preference validation must preserve saved files.
-"$location_writer" --set Example 12 34
-if "$location_writer" --set Invalid 91 0 2>/dev/null; then fail "invalid latitude accepted"; fi
+"$location_writer" --set <<<'{"name":"Example","latitude":12,"longitude":34}'
+if "$location_writer" --set <<<'{"name":"Invalid","latitude":91,"longitude":0}' 2>/dev/null; then fail "invalid latitude accepted"; fi
 jq -e '.name == "Example"' "$location_file" >/dev/null || fail "invalid location replaced saved location"
 # Validate and route writes through Omarchy rather than writing shell.json ourselves.
 cat >"$mock_bin/omarchy" <<'EOF'
