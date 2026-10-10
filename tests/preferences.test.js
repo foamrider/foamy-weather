@@ -46,4 +46,13 @@ for (const weight of ["light", "", "heavy"])
         assert.notEqual(P.text(description, "en"), description, symbol)
       }
 assert.equal(P.text(Model.descriptionForSymbol("lightssleetshowersandthunder_day"), "en"), "Light sleet and thunder")
+for (const [english, norwegian] of [
+  ["Paste", "Lim inn"],
+  ["Clipboard paste timed out. Copy the text again.", "Innlimingen tok for lang tid. Kopier teksten på nytt."],
+  ["Clipboard text is too large or contains invalid characters.", "Teksten er for stor eller inneholder ugyldige tegn."],
+  ["Could not paste clipboard text. Copy plain text and try again.", "Kunne ikke lime inn teksten. Kopier ren tekst og prøv igjen."]
+]) {
+  assert.equal(P.text(english, "nb"), norwegian)
+  assert.equal(P.text(english, "en"), english)
+}
 console.log("Weather preferences, translations and unit conversion tests passed.")

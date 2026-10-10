@@ -862,8 +862,9 @@ Panel {
                     font.bold: true
                   }
 
-                  TextField {
+                  SafeTextField {
                     id: locationField
+                    objectName: "weatherLocationField"
 
                     width: parent.width
                     enabled: !root.savingLocation
@@ -878,7 +879,9 @@ Panel {
                         geocodeDebounce.restart();
 
                     }
-                    Keys.onPressed: function(event) {
+                    onPasteErrorChanged: if (pasteError) root.settingsError = pasteError
+                    translate: root.tr
+                    onKeyPressed: function(event) {
                       if (event.key === Qt.Key_Escape) {
                         root.cancelEditingLocation();
                         event.accepted = true;

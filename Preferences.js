@@ -109,8 +109,21 @@ var english = {
   "Kraftig snø og torden": "Heavy snow and thunder"
 }
 
+// New editor messages use English keys shared by the bounded clipboard control.
+var norwegian = {
+  "Undo": "Angre",
+  "Redo": "Gjør om",
+  "Cut": "Klipp ut",
+  "Copy": "Kopier",
+  "Paste": "Lim inn",
+  "Select all": "Merk alt",
+  "Clipboard paste timed out. Copy the text again.": "Innlimingen tok for lang tid. Kopier teksten på nytt.",
+  "Clipboard text is too large or contains invalid characters.": "Teksten er for stor eller inneholder ugyldige tegn.",
+  "Could not paste clipboard text. Copy plain text and try again.": "Kunne ikke lime inn teksten. Kopier ren tekst og prøv igjen."
+}
+
 function text(value, language) {
-  return language === "en" ? (english[value] || value) : value
+  return language === "en" ? (english[value] || value) : (norwegian[value] || value)
 }
 
 function temperature(value, units) {

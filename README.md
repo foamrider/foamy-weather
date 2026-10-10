@@ -7,7 +7,8 @@ Current weather and a three-day forecast.
 ## Install
 
 Requires Omarchy Quattro, Bash, `curl`, `jq`, `awk`, GNU coreutils, and
-internet access for forecasts and location search.
+`wl-paste` (wl-clipboard). Internet access is required for forecasts and location
+search.
 
 For automatic location, install GeoClue (`geoclue`).
 Disable another weather widget before enabling this one.
@@ -25,6 +26,9 @@ omarchy plugin add https://github.com/foamrider/foamy-weather.git --enable
 Left-click opens the forecast, middle-click refreshes, and right-click shows a
 summary. Select a day to see its hourly forecast. **Use location data** enables
 optional automatic positioning; it is off by default.
+
+Location-search paste is limited to 16 KiB and two seconds. Oversized or stalled
+clipboard reads leave the existing search text unchanged and show an error.
 
 Forecast responses are limited to 2 MiB and each sunrise response to 64 KiB
 after decompression. Invalid or oversized responses are rejected; a valid
