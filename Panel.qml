@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Effects
 import Quickshell
@@ -10,6 +11,31 @@ import "Preferences.js" as Preferences
 
 Panel {
   id: root
+
+  // Keep the window and shaders warm; release the heavier sections after the fade.
+  property bool popupContentActive: false
+  property bool settingsContentActive: false
+  function preparePopup() { popupUnload.stop(); popupContentActive = true }
+  Connections {
+    target: root
+    function onEditingLocationChanged() {
+      if (root.editingLocation) root.settingsContentActive = true
+    }
+    function onOpenedChanged() {
+      if (root.opened) root.preparePopup()
+      else popupUnload.restart()
+    }
+  }
+  Timer {
+    id: popupUnload
+    interval: 1000
+    onTriggered: {
+      if (!root.opened && !panel.visible) {
+        root.popupContentActive = false
+        root.settingsContentActive = false
+      }
+    }
+  }
   moduleName: "foamy.weather"
   ipcTarget: "foamy.weather"
   manageIpc: false
@@ -92,6 +118,8 @@ Panel {
   readonly property string coordinateQuery: hasCoordinates
     ? String(configuredLocationState.latitude) + "," + String(configuredLocationState.longitude) : ""
 
+  readonly property var locationField: locationSettings.item ? locationSettings.item.locationField : null
+  readonly property var automaticLocationToggle: locationSettings.item ? locationSettings.item.automaticLocationToggle : null
   property bool editingLocation: false
   property bool savingLocation: false
   property var locationSuggestions: []
@@ -100,7 +128,8 @@ Panel {
   property string geocodeActiveQuery: ""
 
   readonly property var current: Model.currentCondition(report)
-  readonly property var forecastDays: Model.forecastDays(report, now)
+  // Settings do not need forecast delegates; retain the selected day while editing.
+  readonly property var forecastDays: popupContentActive && !editingLocation ? Model.forecastDays(report, now) : []
   readonly property var selectedDay: forecastDays.length
     ? forecastDays[Math.max(0, Math.min(selectedDayIndex, forecastDays.length - 1))] : null
   readonly property string conditionIcon: current ? Model.iconForSymbol(current.symbol) : "󰖐"
@@ -152,7 +181,7 @@ Panel {
   }
 
   onForecastDaysChanged: {
-    if (selectedDayIndex >= forecastDays.length) selectedDayIndex = Math.max(0, forecastDays.length - 1)
+    if (!editingLocation && selectedDayIndex >= forecastDays.length) selectedDayIndex = Math.max(0, forecastDays.length - 1)
   }
 
   function localPathFromUrl(url) {
@@ -162,6 +191,7 @@ Panel {
   }
 
   function open() {
+    preparePopup()
     openedFromHotkey = false
     setCenterHoverRevealSuppressed(false)
     root.controller.show()
@@ -171,6 +201,7 @@ Panel {
   }
 
   function openFromHotkey() {
+    preparePopup()
     openedFromHotkey = true
     root.controller.show()
     locationFile.reload()
@@ -278,7 +309,7 @@ Panel {
     editingLocation = true
     settingsError = ""
     clearSearch()
-    locationField.text = ""
+    if (locationField) locationField.text = ""
     weatherScroll.contentY = 0
     // Opening settings must not focus the field or query the geocoder.
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -521,7 +552,7 @@ Panel {
       root.savingLocation = false
       localLocationFile.reload()
       root.clearSearch()
-      locationField.text = ""
+      if (locationField) locationField.text = ""
     }
   }
 
@@ -553,7 +584,7 @@ Panel {
     function show(): void { root.openFromHotkey() }
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
-    function edit(): void { root.openFromHotkey(); root.startEditingLocation() }
+    function edit(): void { root.startEditingLocation(); root.openFromHotkey() }
     function refresh(): void { root.refresh(true) }
   }
 
@@ -745,192 +776,262 @@ Panel {
               width: parent.width - Style.space(40)
               spacing: 0
 
-          Column {
-            visible: root.editingLocation
+          Loader {
+            id: locationSettings
+
             width: parent.width
-            spacing: Style.space(12)
+            anchors.horizontalCenter: parent.horizontalCenter
+            active: root.settingsContentActive
+            visible: root.editingLocation
 
-            Row {
-              width: parent.width
-              spacing: Style.space(10)
-              WeatherAction {
-                id: settingsBack
-                iconName: "arrow-left"
-                tooltipText: root.tr("Tilbake")
-                foreground: root.secondaryForeground
-                onClicked: root.cancelEditingLocation()
-              }
-              Label {
-                text: root.tr("Innstillinger")
-                color: root.secondaryForeground
-                anchors.verticalCenter: parent.verticalCenter
-              }
-            }
-            Toggle {
-              fontFamily: root.fontFamily
-              titleSize: Style.space(13)
-              implicitHeight: Style.space(36)
-              borderSpec: activeFocus ? Border.flat(Color.accent, 1) : Border.none()
-              color: "transparent"
-              id: automaticLocationToggle
-              width: parent.width
-              label: root.tr("Bruk posisjonsdata")
-              property bool showHint: false
-              onHovered: function(hovered) { showHint = hovered }
-              PanelToolTip {
-                visible: automaticLocationToggle.showHint || automaticLocationToggle.activeFocus
-                text: root.tr("Automatisk via GeoClue. Posisjonen brukes av MET Norway og OpenStreetMap.")
-                fontFamily: root.fontFamily
-              }
-              checked: root.automaticLocation
-              enabled: !preferencesSaveProc.running && !root.savingLocation
-              onClicked: root.savePreference("automaticLocation", !root.automaticLocation)
-            }
-            Label {
-              visible: root.automaticLocation && (locationProc.running || root.dynamicLocationError !== "")
-              width: parent.width
-              wrapMode: Text.WordWrap
-              text: locationProc.running ? root.tr("Finner posisjon…") : root.tr(root.dynamicLocationError)
-              color: root.secondaryForeground
-              font.pixelSize: Style.space(12)
-            }
-            Column {
-              visible: !root.automaticLocation
-              width: parent.width
-              spacing: Style.spacing.labelGap
-              Label {
-                text: root.tr("Posisjon")
-                color: Qt.darker(Color.popups.text, 1.4)
-                font.pixelSize: Style.font.caption
-                font.bold: true
-              }
-              TextField {
-                id: locationField
+            sourceComponent: Component {
+              Column {
+                property alias locationField: locationField
+                property alias automaticLocationToggle: automaticLocationToggle
+
+                visible: root.editingLocation
                 width: parent.width
-                enabled: !root.savingLocation
-                Accessible.name: root.tr("Posisjon")
-                placeholderText: root.tr("Søk etter sted")
-                foreground: root.foreground
-                font.family: root.fontFamily
-                Binding {
-                  target: locationField.background
-                  property: "radius"
-                  value: Style.cornerRadius * 2
-                }
-                onTextEdited: {
-                  root.clearSearch()
-                  root.settingsError = ""
-                  if (text.trim().length >= 2) geocodeDebounce.restart()
-                }
+                spacing: Style.space(12)
 
-                Keys.onPressed: function(event) {
-                  if (event.key === Qt.Key_Escape) {
-                    root.cancelEditingLocation()
-                    event.accepted = true
-                  } else if (event.key === Qt.Key_Down) {
-                    if (root.suggestionIndex < root.locationSuggestions.length - 1) root.suggestionIndex++
-                    event.accepted = true
-                  } else if (event.key === Qt.Key_Up) {
-                    if (root.suggestionIndex > 0) root.suggestionIndex--
-                    event.accepted = true
-                  } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                    root.commitLocation()
-                    event.accepted = true
+                Row {
+                  width: parent.width
+                  spacing: Style.space(10)
+
+                  WeatherAction {
+                    id: settingsBack
+
+                    iconName: "arrow-left"
+                    tooltipText: root.tr("Tilbake")
+                    foreground: root.secondaryForeground
+                    onClicked: root.cancelEditingLocation()
                   }
+
+                  Label {
+                    text: root.tr("Innstillinger")
+                    color: root.secondaryForeground
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+
                 }
-              }
-            }
 
-            Repeater {
-              model: root.locationSuggestions
+                Toggle {
+                  id: automaticLocationToggle
 
-              Rectangle {
-                required property var modelData
-                required property int index
-                width: parent.width
-                height: suggestionText.implicitHeight + Style.space(12)
-                radius: Style.cornerRadius * 2
-                color: index === root.suggestionIndex
-                  ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent"
+                  property bool showHint: false
 
-                Text {
-                  textFormat: Text.PlainText
-                  id: suggestionText
-                  anchors.left: parent.left
-                  anchors.leftMargin: Style.space(12)
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: modelData.name + (modelData.description ? "  ·  " + modelData.description : "")
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  width: parent.width - Style.space(24)
+                  fontFamily: root.fontFamily
+                  titleSize: Style.space(13)
+                  implicitHeight: Style.space(36)
+                  borderSpec: activeFocus ? Border.flat(Color.accent, 1) : Border.none()
+                  color: "transparent"
+                  width: parent.width
+                  label: root.tr("Bruk posisjonsdata")
+                  onHovered: function(hovered) {
+                    showHint = hovered;
+                  }
+                  checked: root.automaticLocation
+                  enabled: !preferencesSaveProc.running && !root.savingLocation
+                  onClicked: root.savePreference("automaticLocation", !root.automaticLocation)
+
+                  PanelToolTip {
+                    visible: automaticLocationToggle.showHint || automaticLocationToggle.activeFocus
+                    text: root.tr("Automatisk via GeoClue. Posisjonen brukes av MET Norway og OpenStreetMap.")
+                    fontFamily: root.fontFamily
+                  }
+
+                }
+
+                Label {
+                  visible: root.automaticLocation && (locationProc.running || root.dynamicLocationError !== "")
+                  width: parent.width
                   wrapMode: Text.WordWrap
+                  text: locationProc.running ? root.tr("Finner posisjon…") : root.tr(root.dynamicLocationError)
+                  color: root.secondaryForeground
+                  font.pixelSize: Style.space(12)
                 }
 
-                MouseArea {
-                  anchors.fill: parent
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onPositionChanged: root.suggestionIndex = index
-                  onClicked: root.pickSuggestion(modelData)
+                Column {
+                  visible: !root.automaticLocation
+                  width: parent.width
+                  spacing: Style.spacing.labelGap
+
+                  Label {
+                    text: root.tr("Posisjon")
+                    color: Qt.darker(Color.popups.text, 1.4)
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                  }
+
+                  TextField {
+                    id: locationField
+
+                    width: parent.width
+                    enabled: !root.savingLocation
+                    Accessible.name: root.tr("Posisjon")
+                    placeholderText: root.tr("Søk etter sted")
+                    foreground: root.foreground
+                    font.family: root.fontFamily
+                    onTextEdited: {
+                      root.clearSearch();
+                      root.settingsError = "";
+                      if (text.trim().length >= 2)
+                        geocodeDebounce.restart();
+
+                    }
+                    Keys.onPressed: function(event) {
+                      if (event.key === Qt.Key_Escape) {
+                        root.cancelEditingLocation();
+                        event.accepted = true;
+                      } else if (event.key === Qt.Key_Down) {
+                        if (root.suggestionIndex < root.locationSuggestions.length - 1)
+                          root.suggestionIndex++;
+
+                        event.accepted = true;
+                      } else if (event.key === Qt.Key_Up) {
+                        if (root.suggestionIndex > 0)
+                          root.suggestionIndex--;
+
+                        event.accepted = true;
+                      } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                        root.commitLocation();
+                        event.accepted = true;
+                      }
+                    }
+
+                    Binding {
+                      target: locationField.background
+                      property: "radius"
+                      value: Style.cornerRadius * 2
+                    }
+
+                  }
+
                 }
+
+                Repeater {
+                  model: root.locationSuggestions
+
+                  Rectangle {
+                    required property var modelData
+                    required property int index
+
+                    width: parent.width
+                    height: suggestionText.implicitHeight + Style.space(12)
+                    radius: Style.cornerRadius * 2
+                    color: index === root.suggestionIndex ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent"
+
+                    Text {
+                      id: suggestionText
+
+                      textFormat: Text.PlainText
+                      anchors.left: parent.left
+                      anchors.leftMargin: Style.space(12)
+                      anchors.verticalCenter: parent.verticalCenter
+                      text: modelData.name + (modelData.description ? "  ·  " + modelData.description : "")
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.body
+                      width: parent.width - Style.space(24)
+                      wrapMode: Text.WordWrap
+                    }
+
+                    MouseArea {
+                      anchors.fill: parent
+                      hoverEnabled: true
+                      cursorShape: Qt.PointingHandCursor
+                      onPositionChanged: root.suggestionIndex = index
+                      onClicked: root.pickSuggestion(modelData)
+                    }
+
+                  }
+
+                }
+
+                Label {
+                  visible: !root.automaticLocation && (geocodeProc.running || root.searchCompleted && !root.locationSuggestions.length)
+                  text: geocodeProc.running ? root.tr("Søker…") : root.tr("Ingen treff")
+                  color: root.secondaryForeground
+                }
+
+                Label {
+                  visible: root.settingsError !== ""
+                  width: parent.width
+                  wrapMode: Text.WordWrap
+                  text: root.tr(root.settingsError)
+                  color: root.urgent
+                }
+
+                Grid {
+                  id: preferenceGrid
+
+                  width: parent.width
+                  columns: width < Style.space(420) ? 1 : 2
+                  spacing: Style.space(12)
+
+                  WeatherDropdown {
+                    id: languageDropdown
+
+                    fontFamily: root.fontFamily
+                    width: (preferenceGrid.width - preferenceGrid.spacing * (preferenceGrid.columns - 1)) / preferenceGrid.columns
+                    label: root.tr("Språk")
+                    value: root.preferences.languageMode
+                    options: [{
+                      "value": "system",
+                      "label": root.tr("Standard (systemspråk)")
+                    }, {
+                      "value": "nb",
+                      "label": "Norsk bokmål"
+                    }, {
+                      "value": "en",
+                      "label": "English"
+                    }]
+                    enabled: !preferencesSaveProc.running
+                    onChanged: function(value) {
+                      root.savePreference("language", value);
+                    }
+                  }
+
+                  WeatherDropdown {
+                    id: unitsDropdown
+
+                    fontFamily: root.fontFamily
+                    width: (preferenceGrid.width - preferenceGrid.spacing * (preferenceGrid.columns - 1)) / preferenceGrid.columns
+                    label: root.tr("Enheter")
+                    value: root.units
+                    options: [{
+                      "value": "metric",
+                      "label": root.tr("Metrisk (°C, km/t, mm)")
+                    }, {
+                      "value": "imperial",
+                      "label": root.tr("Imperial (°F, mph, in)")
+                    }]
+                    enabled: !preferencesSaveProc.running
+                    onChanged: function(value) {
+                      root.savePreference("units", value);
+                    }
+                  }
+
+                }
+
+                Toggle {
+                  id: animationToggle
+
+                  fontFamily: root.fontFamily
+                  titleSize: Style.space(13)
+                  implicitHeight: Style.space(36)
+                  borderSpec: activeFocus ? Border.flat(Color.accent, 1) : Border.none()
+                  color: "transparent"
+                  width: parent.width
+                  label: root.tr("Animert bakgrunn")
+                  checked: root.preferences.animations
+                  enabled: !preferencesSaveProc.running
+                  onClicked: root.savePreference("animations", !root.preferences.animations)
+                }
+
               }
+
             }
-            Label {
-              visible: !root.automaticLocation && (geocodeProc.running || root.searchCompleted && !root.locationSuggestions.length)
-              text: geocodeProc.running ? root.tr("Søker…") : root.tr("Ingen treff")
-              color: root.secondaryForeground
-            }
-            Label {
-              visible: root.settingsError !== ""
-              width: parent.width
-              wrapMode: Text.WordWrap
-              text: root.tr(root.settingsError)
-              color: root.urgent
-            }
-            Grid {
-              id: preferenceGrid
-              width: parent.width
-              columns: width < Style.space(420) ? 1 : 2
-              spacing: Style.space(12)
-              WeatherDropdown {
-                id: languageDropdown
-                fontFamily: root.fontFamily
-                width: (preferenceGrid.width - preferenceGrid.spacing * (preferenceGrid.columns - 1)) / preferenceGrid.columns
-                label: root.tr("Språk")
-                value: root.preferences.languageMode
-                options: [
-                  { value: "system", label: root.tr("Standard (systemspråk)") },
-                  { value: "nb", label: "Norsk bokmål" },
-                  { value: "en", label: "English" }
-                ]
-                enabled: !preferencesSaveProc.running
-                onChanged: function(value) { root.savePreference("language", value) }
-              }
-              WeatherDropdown {
-                id: unitsDropdown
-                fontFamily: root.fontFamily
-                width: (preferenceGrid.width - preferenceGrid.spacing * (preferenceGrid.columns - 1)) / preferenceGrid.columns
-                label: root.tr("Enheter")
-                value: root.units
-                options: [{ value: "metric", label: root.tr("Metrisk (°C, km/t, mm)") }, { value: "imperial", label: root.tr("Imperial (°F, mph, in)") }]
-                enabled: !preferencesSaveProc.running
-                onChanged: function(value) { root.savePreference("units", value) }
-              }
-            }
-            Toggle {
-              id: animationToggle
-              fontFamily: root.fontFamily
-              titleSize: Style.space(13)
-              implicitHeight: Style.space(36)
-              borderSpec: activeFocus ? Border.flat(Color.accent, 1) : Border.none()
-              color: "transparent"
-              width: parent.width
-              label: root.tr("Animert bakgrunn")
-              checked: root.preferences.animations
-              enabled: !preferencesSaveProc.running
-              onClicked: root.savePreference("animations", !root.preferences.animations)
-            }
+
           }
 
           Rectangle {
