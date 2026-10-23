@@ -70,7 +70,7 @@ done
 if (($# > 1)) || [[ -n $mode && $mode != --force ]] \
   || ! IFS= read -r latitude || ! IFS= read -r longitude \
   || ! valid_coordinates "$latitude" "$longitude"; then
-  json_error "Velg et sted for å hente værdata"
+  json_error "Choose a location to load weather"
   exit 0
 fi
 
@@ -118,7 +118,7 @@ if [[ $mode == --force || $cache_is_fresh == false ]]; then
     # A failed refresh must not replace useful conditions with an empty panel.
     stale=true
   else
-    json_error "Værdata er utilgjengelig"
+    json_error "Weather data is unavailable"
     exit 0
   fi
 fi

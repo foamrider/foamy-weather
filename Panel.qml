@@ -57,37 +57,37 @@ Panel {
   readonly property var displayHours: selectedDay ? selectedDay.hours : []
   readonly property string hourSummary: {
     for (var i = 0; i < displayHours.length; i++) {
-      if (displayHours[i].precipitation > 0) return root.tr("Nedbør fra kl. ") + displayHours[i].time.slice(0, 2)
+      if (displayHours[i].precipitation > 0) return root.tr("Precipitation from ") + displayHours[i].time.slice(0, 2)
     }
-    return root.tr("Opphold i perioden")
+    return root.tr("No precipitation expected")
   }
   readonly property string uvLabel: !current || current.uvIndex === null ? "—"
-    : current.uvIndex < 3 ? root.tr("Lav") : current.uvIndex < 6 ? root.tr("Moderat") : current.uvIndex < 8 ? root.tr("Høy") : root.tr("Svært høy")
+    : current.uvIndex < 3 ? root.tr("Low") : current.uvIndex < 6 ? root.tr("Moderate") : current.uvIndex < 8 ? root.tr("High") : root.tr("Very high")
   function windLabel(degrees) {
     var direction = Model.windDirection(degrees)
-    var names = { N: root.tr("Nordlig"), NØ: root.tr("Nordøstlig"), Ø: root.tr("Østlig"), SØ: root.tr("Sørøstlig"), S: root.tr("Sørlig"), SV: root.tr("Sørvestlig"), V: root.tr("Vestlig"), NV: root.tr("Nordvestlig") }
+    var names = { N: root.tr("Northerly"), NØ: root.tr("Northeasterly"), Ø: root.tr("Easterly"), SØ: root.tr("Southeasterly"), S: root.tr("Southerly"), SV: root.tr("Southwesterly"), V: root.tr("Westerly"), NV: root.tr("Northwesterly") }
     return names[direction] || direction
   }
 
   readonly property string configRoot: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omarchy"
   property string widgetId: ""
-  readonly property var preferences: Preferences.fromSettings(settings, Qt.locale().name)
-  readonly property string language: preferences.language
+  readonly property var preferences: Preferences.fromSettings(settings)
+  readonly property string language: FoamyI18n.language
   readonly property string units: preferences.units
   readonly property bool automaticLocation: preferences.automaticLocation
   readonly property bool preferencesReady: widgetId !== ""
   property string settingsError: ""
   property bool searchCompleted: false
 
-  function tr(value) { return Preferences.text(value, language) }
+  function tr(value) { return FoamyI18n.t(value) }
   function temperature(value) { return Preferences.temperature(value, units) }
   function precipitation(value) { return Preferences.precipitation(value, units) }
-  function windSpeed(value) { return Preferences.wind(value, units, language) }
+  function windSpeed(value) { return Preferences.wind(value, units, root.tr, FoamyI18n.number) }
 
   function savePreference(name, value) {
     if (preferencesSaveProc.running) return
     if (!widgetId) {
-      settingsError = "Kunne ikke lese innstillingene"
+      settingsError = "Could not read settings"
       return
     }
     settingsError = ""
@@ -135,8 +135,8 @@ Panel {
   readonly property string conditionIcon: current ? Model.iconForSymbol(current.symbol) : "󰖐"
   readonly property string currentTemperature: current ? root.temperature(current.temperature) : "--"
   readonly property string barLabel: conditionIcon + " " + currentTemperature
-  readonly property string currentDescription: current ? tr(Model.descriptionForSymbol(current.symbol)) : root.tr("Ingen værdata")
-  readonly property string updatedText: report && report.fetchedAt ? Preferences.age(report.fetchedAt, now, language) : ""
+  readonly property string currentDescription: current ? tr(Model.descriptionForSymbol(current.symbol)) : root.tr("No weather data")
+  readonly property string updatedText: report && report.fetchedAt ? Preferences.age(report.fetchedAt, now, root.tr) : ""
 
   readonly property string requestUserAgent: String(setting("requestUserAgent", ""))
   readonly property string fetchScript: localPathFromUrl(Qt.resolvedUrl("scripts/weather-fetch.sh"))
@@ -244,7 +244,7 @@ Panel {
     }
     if (!hasCoordinates) {
       loading = false
-      errorMessage = "Velg et sted for å hente værdata"
+      errorMessage = "Choose a location to load weather"
       return
     }
     if (weatherProc.running) return
@@ -285,14 +285,14 @@ Panel {
     var wind = windSpeed(current.windSpeed)
     var windDirection = windLabel(current.windDirection)
     var body = currentDescription + " · " + currentTemperature
-      + "\n" + tr("Vind") + " " + wind + (windDirection ? " " + windDirection : "")
-      + " · " + tr("Luftfuktighet") + " " + (current.humidity === null ? "—" : current.humidity + "%")
+      + "\n" + tr("Wind") + " " + wind + (windDirection ? " " + windDirection : "")
+      + " · " + tr("Humidity") + " " + (current.humidity === null ? "—" : current.humidity + "%")
     // A failed reverse lookup can leave a coordinate pair as the location label.
-    var headlineLocation = configuredLocation || root.tr("valgt sted")
-    if (/^-?[0-9.]+,\s*-?[0-9.]+$/.test(headlineLocation)) headlineLocation = root.tr("valgt sted")
+    var headlineLocation = configuredLocation || root.tr("selected location")
+    if (/^-?[0-9.]+,\s*-?[0-9.]+$/.test(headlineLocation)) headlineLocation = root.tr("selected location")
     Quickshell.execDetached([
       "omarchy-notification-send", "-g", conditionIcon,
-      root.tr("Været i ") + headlineLocation, body
+      root.tr("Weather in ") + headlineLocation, body
     ])
   }
 
@@ -326,7 +326,7 @@ Panel {
   function commitLocation() {
     var location = Model.locationCommit(locationField.text, locationSuggestions, suggestionIndex)
     if (location.latitude === null || location.longitude === null) {
-      settingsError = "Velg et sted fra søkeresultatene"
+      settingsError = "Choose a location from the search results"
       return
     }
     pickSuggestion(location)
@@ -359,21 +359,21 @@ Panel {
     geocodeProc.command = [
       "curl", "-fsS", "--max-time", "5",
       "https://geocoding-api.open-meteo.com/v1/search?name="
-        + encodeURIComponent(geocodeActiveQuery) + "&count=5&language=" + (root.language === "nb" ? "no" : "en") + "&format=json"
+        + encodeURIComponent(geocodeActiveQuery) + "&count=5&language=" + (root.language === "no" ? "no" : "en") + "&format=json"
     ]
     geocodeProc.running = true
   }
 
   function dayLabel(day, index) {
     if (!day) return ""
-    if (index === 0) return root.tr("I dag")
-    if (index === 1) return root.tr("I morgen")
-    var label = Qt.locale(language === "nb" ? "nb_NO" : "en_US").toString(day.dateObject, "dddd")
+    if (index === 0) return root.tr("Today")
+    if (index === 1) return root.tr("Tomorrow")
+    var label = Qt.locale(FoamyI18n.formatLocale).toString(day.dateObject, "dddd")
     return label.charAt(0).toUpperCase() + label.slice(1)
   }
 
   function shortDate(day) {
-    return day ? Qt.locale(language === "nb" ? "nb_NO" : "en_US").toString(day.dateObject, "d. MMM") : ""
+    return day ? Qt.locale(FoamyI18n.formatLocale).toString(day.dateObject, "d. MMM") : ""
   }
 
   function timeLabel(value) {
@@ -466,20 +466,20 @@ Panel {
             return
           }
         } catch (e) {
-          root.errorMessage = "Kunne ikke lese værdata"
+          root.errorMessage = "Could not read weather data"
           root.scheduleRetry()
           return
         }
 
         var parsed = Model.parseBundle(raw)
         if (!parsed) {
-          root.errorMessage = "Ugyldig svar fra MET Norway"
+          root.errorMessage = "Invalid response from MET Norway"
           root.scheduleRetry()
           return
         }
         root.report = parsed
         root.loading = false
-        root.errorMessage = parsed.stale ? "Viser sist kjente værdata" : ""
+        root.errorMessage = parsed.stale ? "Showing last known weather" : ""
         if (parsed.stale) root.scheduleRetry()
         else root.retries = 0
       }
@@ -493,7 +493,7 @@ Panel {
       onStreamFinished: {
         var resolved = Model.parseResolvedLocation(text)
         if (resolved.latitude === null || resolved.longitude === null) {
-          root.dynamicLocationError = resolved.error || "Kunne ikke lese automatisk posisjon"
+          root.dynamicLocationError = resolved.error || "Could not read automatic location"
           if (!root.hasCoordinates) root.errorMessage = root.dynamicLocationError
           // Automatic location needs its own recovery; weather cannot load without it.
           if (root.networkReady && root.automaticLocation && root.locationRetries < 3) {
@@ -516,7 +516,7 @@ Panel {
     id: geocodeProc
     onExited: function(exitCode) {
       if (exitCode !== 0 && root.editingLocation && root.geocodeActiveQuery === locationField.text.trim())
-        root.settingsError = "Kunne ikke søke etter sted"
+        root.settingsError = "Could not search for a location"
     }
     stdout: StdioCollector {
       waitForEnd: true
@@ -526,7 +526,7 @@ Panel {
           var response = JSON.parse(text)
           if (response.error) throw new Error("Geocoder rejected query")
         } catch (error) {
-          root.settingsError = "Kunne ikke søke etter sted"
+          root.settingsError = "Could not search for a location"
           return
         }
         root.locationSuggestions = Model.parseGeocodingResults(text)
@@ -546,7 +546,7 @@ Panel {
     onExited: function(exitCode) {
       if (exitCode !== 0) {
         root.savingLocation = false
-        root.settingsError = "Kunne ikke lagre stedet"
+        root.settingsError = "Could not save the location"
         return
       }
       root.savingLocation = false
@@ -560,16 +560,16 @@ Panel {
     path: localPathFromUrl(Qt.resolvedUrl("manifest.json"))
     onLoaded: {
       try { root.widgetId = String(JSON.parse(text()).id || "") }
-      catch (error) { root.settingsError = "Kunne ikke lese innstillingene" }
+      catch (error) { root.settingsError = "Could not read settings" }
     }
-    onLoadFailed: root.settingsError = "Kunne ikke lese innstillingene"
+    onLoadFailed: root.settingsError = "Could not read settings"
   }
 
   Process {
     id: preferencesSaveProc
     onExited: function(exitCode) {
       if (exitCode !== 0) {
-        root.settingsError = "Kunne ikke lagre innstillingene"
+        root.settingsError = "Could not save settings"
         return
       }
       if (root.automaticLocation) root.clearSearch()
@@ -700,7 +700,7 @@ Panel {
               }
               Label {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: root.configuredLocation || root.tr("Velg sted")
+                text: root.configuredLocation || root.tr("Choose location")
                 width: Math.min(implicitWidth, weatherHero.width - Style.space(120))
                 height: Style.space(28)
                 verticalAlignment: Text.AlignVCenter
@@ -737,13 +737,13 @@ Panel {
                 Label {
                   width: parent.width; horizontalAlignment: Text.AlignHCenter
                   visible: root.forecastDays.length > 0
-                  text: root.forecastDays.length ? root.tr("Høy ") + root.temperature(root.forecastDays[0].high) + root.tr(" · Lav ") + root.temperature(root.forecastDays[0].low) : ""
+                  text: root.forecastDays.length ? root.tr("High ") + root.temperature(root.forecastDays[0].high) + root.tr(" · Low ") + root.temperature(root.forecastDays[0].low) : ""
                   color: root.secondaryForeground; font.pixelSize: Style.space(12)
                 }
                 Label {
                   width: parent.width; horizontalAlignment: Text.AlignHCenter
                   visible: !root.current
-                  text: root.loading ? root.tr("Henter værdata…") : root.tr("Venter på værdata")
+                  text: root.loading ? root.tr("Loading weather…") : root.tr("Waiting for weather")
                   color: root.secondaryForeground; font.pixelSize: Style.space(12)
                 }
               }
@@ -759,7 +759,7 @@ Panel {
               radius: Style.cornerRadius * 2
               iconSize: Style.space(16)
               iconName: "settings"
-              tooltipText: root.tr("Innstillinger")
+              tooltipText: root.tr("Settings")
               foreground: root.secondaryForeground
               keyTarget: keyCatcher
               enabled: !root.savingLocation
@@ -801,13 +801,13 @@ Panel {
                     id: settingsBack
 
                     iconName: "arrow-left"
-                    tooltipText: root.tr("Tilbake")
+                    tooltipText: root.tr("Back")
                     foreground: root.secondaryForeground
                     onClicked: root.cancelEditingLocation()
                   }
 
                   Label {
-                    text: root.tr("Innstillinger")
+                    text: root.tr("Settings")
                     color: root.secondaryForeground
                     anchors.verticalCenter: parent.verticalCenter
                   }
@@ -825,7 +825,7 @@ Panel {
                   borderSpec: activeFocus ? Border.flat(Color.accent, 1) : Border.none()
                   color: "transparent"
                   width: parent.width
-                  label: root.tr("Bruk posisjonsdata")
+                  label: root.tr("Use location data")
                   onHovered: function(hovered) {
                     showHint = hovered;
                   }
@@ -835,7 +835,7 @@ Panel {
 
                   PanelToolTip {
                     visible: automaticLocationToggle.showHint || automaticLocationToggle.activeFocus
-                    text: root.tr("Automatisk via GeoClue. Posisjonen brukes av MET Norway og OpenStreetMap.")
+                    text: root.tr("Automatic via GeoClue. Your location is used by MET Norway and OpenStreetMap.")
                     fontFamily: root.fontFamily
                   }
 
@@ -845,7 +845,7 @@ Panel {
                   visible: root.automaticLocation && (locationProc.running || root.dynamicLocationError !== "")
                   width: parent.width
                   wrapMode: Text.WordWrap
-                  text: locationProc.running ? root.tr("Finner posisjon…") : root.tr(root.dynamicLocationError)
+                  text: locationProc.running ? root.tr("Finding location…") : root.tr(root.dynamicLocationError)
                   color: root.secondaryForeground
                   font.pixelSize: Style.space(12)
                 }
@@ -856,7 +856,7 @@ Panel {
                   spacing: Style.spacing.labelGap
 
                   Label {
-                    text: root.tr("Posisjon")
+                    text: root.tr("Location")
                     color: Qt.darker(Color.popups.text, 1.4)
                     font.pixelSize: Style.font.caption
                     font.bold: true
@@ -868,8 +868,8 @@ Panel {
 
                     width: parent.width
                     enabled: !root.savingLocation
-                    Accessible.name: root.tr("Posisjon")
-                    placeholderText: root.tr("Søk etter sted")
+                    Accessible.name: root.tr("Location")
+                    placeholderText: root.tr("Search for a location")
                     foreground: root.foreground
                     font.family: root.fontFamily
                     onTextEdited: {
@@ -952,7 +952,7 @@ Panel {
 
                 Label {
                   visible: !root.automaticLocation && (geocodeProc.running || root.searchCompleted && !root.locationSuggestions.length)
-                  text: geocodeProc.running ? root.tr("Søker…") : root.tr("Ingen treff")
+                  text: geocodeProc.running ? root.tr("Searching…") : root.tr("No locations found")
                   color: root.secondaryForeground
                 }
 
@@ -971,39 +971,17 @@ Panel {
                   columns: width < Style.space(420) ? 1 : 2
                   spacing: Style.space(12)
 
-                  WeatherDropdown {
-                    id: languageDropdown
-
-                    fontFamily: root.fontFamily
-                    width: (preferenceGrid.width - preferenceGrid.spacing * (preferenceGrid.columns - 1)) / preferenceGrid.columns
-                    label: root.tr("Språk")
-                    value: root.preferences.languageMode
-                    options: [{
-                      "value": "system",
-                      "label": root.tr("Standard (systemspråk)")
-                    }, {
-                      "value": "nb",
-                      "label": "Norsk bokmål"
-                    }, {
-                      "value": "en",
-                      "label": "English"
-                    }]
-                    enabled: !preferencesSaveProc.running
-                    onChanged: function(value) {
-                      root.savePreference("language", value);
-                    }
-                  }
 
                   WeatherDropdown {
                     id: unitsDropdown
 
                     fontFamily: root.fontFamily
                     width: (preferenceGrid.width - preferenceGrid.spacing * (preferenceGrid.columns - 1)) / preferenceGrid.columns
-                    label: root.tr("Enheter")
+                    label: root.tr("Units")
                     value: root.units
                     options: [{
                       "value": "metric",
-                      "label": root.tr("Metrisk (°C, km/t, mm)")
+                      "label": root.tr("Metric (°C, km/h, mm)")
                     }, {
                       "value": "imperial",
                       "label": root.tr("Imperial (°F, mph, in)")
@@ -1025,7 +1003,7 @@ Panel {
                   borderSpec: activeFocus ? Border.flat(Color.accent, 1) : Border.none()
                   color: "transparent"
                   width: parent.width
-                  label: root.tr("Animert bakgrunn")
+                  label: root.tr("Animated background")
                   checked: root.preferences.animations
                   enabled: !preferencesSaveProc.running
                   onClicked: root.savePreference("animations", !root.preferences.animations)
@@ -1086,10 +1064,10 @@ Panel {
                 rowSpacing: Style.space(15)
                 Repeater {
                   model: [
-                    { label: root.tr("Vind"), icon: "wind", value: root.current ? root.windSpeed(root.current.windSpeed) : "—", detail: root.current ? root.windLabel(root.current.windDirection) : "" },
-                    { label: root.tr("Fuktighet"), icon: "droplets", value: root.current && root.current.humidity !== null ? root.current.humidity + " %" : "—", detail: root.tr("Relativ") },
-                    { label: root.tr("Neste time"), icon: "cloud-rain", value: root.current ? root.precipitation(root.current.precipitation) : "—", detail: root.tr("Nedbør") },
-                    { label: root.tr("UV-indeks"), icon: "sun", value: root.current ? Model.uvIndex(root.current.uvIndex) : "—", detail: root.uvLabel }
+                    { label: root.tr("Wind"), icon: "wind", value: root.current ? root.windSpeed(root.current.windSpeed) : "—", detail: root.current ? root.windLabel(root.current.windDirection) : "" },
+                    { label: root.tr("Humidity"), icon: "droplets", value: root.current && root.current.humidity !== null ? root.current.humidity + " %" : "—", detail: root.tr("Relative") },
+                    { label: root.tr("Next hour"), icon: "cloud-rain", value: root.current ? root.precipitation(root.current.precipitation) : "—", detail: root.tr("Precipitation") },
+                    { label: root.tr("UV index"), icon: "sun", value: root.current ? Model.uvIndex(root.current.uvIndex) : "—", detail: root.uvLabel }
                   ]
                   Item {
                     required property var modelData
@@ -1115,7 +1093,7 @@ Panel {
               }
 
               Item { width: 1; height: Style.space(16); visible: root.forecastDays.length > 0 }
-              Label { text: root.tr("Tre dagers varsel"); visible: root.forecastDays.length > 0 }
+              Label { text: root.tr("Three-day forecast"); visible: root.forecastDays.length > 0 }
               Item { width: 1; height: Style.space(11); visible: root.forecastDays.length > 0 }
               Grid {
                 id: forecastGrid
@@ -1188,7 +1166,7 @@ Panel {
               Row {
                 width: parent.width
                 visible: root.displayHours.length > 0
-                Label { text: root.tr("Time for time") }
+                Label { text: root.tr("Hourly forecast") }
                 Item { width: Math.max(0, parent.width - parent.children[0].implicitWidth - parent.children[2].implicitWidth); height: 1 }
                 Label { text: root.selectedDay ? root.dayLabel(root.selectedDay, root.selectedDayIndex) + " · " + root.hourSummary : ""; color: root.secondaryForeground; font.pixelSize: Style.space(11) }
               }
@@ -1231,7 +1209,7 @@ Panel {
                     visible: root.updatedText !== ""
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(implicitWidth, Math.max(0, footer.width - providerLabel.width - refreshButton.width - Style.space(24)))
-                    text: root.tr("Oppdatert ") + root.updatedText
+                    text: root.tr("Updated ") + root.updatedText
                     elide: Text.ElideRight
                     color: root.secondaryForeground
                     opacity: 0.8
@@ -1241,7 +1219,7 @@ Panel {
                     id: refreshButton
                     iconName: "refresh-cw"
                     width: Style.space(26); height: Style.space(26)
-                    tooltipText: root.loading ? root.tr("Oppdaterer…") : (!root.networkReady ? root.tr("Venter på nettverk…") : root.tr("Oppdater"))
+                    tooltipText: root.loading ? root.tr("Refreshing…") : (!root.networkReady ? root.tr("Waiting for network…") : root.tr("Refresh"))
                     spinning: root.opened && root.loading
                     foreground: root.secondaryForeground
                     enabled: !root.loading && root.networkReady

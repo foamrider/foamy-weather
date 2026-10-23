@@ -71,12 +71,12 @@ assert.deepEqual(Model.parseResolvedLocation('{"name":"Example Town","latitude":
   source: "geoclue",
   error: ""
 })
-assert.deepEqual(Model.parseResolvedLocation('{"error":"Kunne ikke finne automatisk posisjon"}'), {
+assert.deepEqual(Model.parseResolvedLocation('{"error":"Could not find automatic location"}'), {
   name: "",
   latitude: null,
   longitude: null,
   source: "",
-  error: "Kunne ikke finne automatisk posisjon"
+  error: "Could not find automatic location"
 })
 
 const parsed = Model.parseBundle(JSON.stringify(bundle))
@@ -90,7 +90,7 @@ assert.equal(Model.temperature(current.temperature), "11°")
 assert.equal(Model.uvIndex(current.uvIndex), "2.4")
 assert.equal(Model.uvIndex(null), "—")
 assert.equal(Model.iconForSymbol(current.symbol), "󰖐")
-assert.equal(Model.descriptionForSymbol("partlycloudy_day"), "Delvis skyet")
+assert.equal(Model.descriptionForSymbol("partlycloudy_day"), "Partly cloudy")
 assert.equal(Model.windDirection(current.windDirection), "SV")
 assert.equal(Model.windSpeedKmh(current.windSpeed), 9)
 

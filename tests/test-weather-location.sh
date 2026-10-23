@@ -57,7 +57,7 @@ jq -e '.name == "Example Town" and .source == "geoclue-cache"' <<<"$cached" >/de
   || fail "fresh GeoClue location was not read from cache"
 
 unavailable=$(WEATHER_GEOCLUE_COMMAND="$test_root/missing" "$resolver" --force)
-jq -e '.error == "Kunne ikke finne automatisk posisjon"' <<<"$unavailable" >/dev/null \
+jq -e '.error == "Could not find automatic location"' <<<"$unavailable" >/dev/null \
   || fail "unavailable GeoClue must report an error"
 
 # Invalid coordinates and failed preference validation must preserve saved files.
@@ -73,13 +73,14 @@ EOF
 chmod +x "$mock_bin/omarchy"
 export WEATHER_TEST_CALLS="$test_root/settings-calls.jsonl"
 preferences_writer="$plugin_root/scripts/weather-preferences.sh"
-"$preferences_writer" example.weather language '"en"'
+"$preferences_writer" example.weather units '"metric"'
 "$preferences_writer" example.weather automaticLocation false
-jq -se '.[0] == ["bar","set","example.weather","language","\"en\"","--json"] and .[1] == ["bar","set","example.weather","automaticLocation","false","--json"]' "$WEATHER_TEST_CALLS" >/dev/null || fail "wrong shell settings arguments"
-"$preferences_writer" example.weather language '"system"'
-jq -se '.[2] == ["bar","set","example.weather","language","\"system\"","--json"]' "$WEATHER_TEST_CALLS" >/dev/null || fail "system language did not reach the shell"
+jq -se '.[0] == ["bar","set","example.weather","units","\"metric\"","--json"] and .[1] == ["bar","set","example.weather","automaticLocation","false","--json"]' "$WEATHER_TEST_CALLS" >/dev/null || fail "wrong shell settings arguments"
+for language in system en nb; do
+  if "$preferences_writer" example.weather language "\"$language\"" 2>/dev/null; then fail "retired language override accepted"; fi
+done
 if "$preferences_writer" example.weather language '"unsupported"' 2>/dev/null; then fail "invalid preference accepted"; fi
 if "$preferences_writer" example.weather id '"different.widget"' 2>/dev/null; then fail "unknown preference accepted"; fi
-[[ $(wc -l <"$WEATHER_TEST_CALLS") == 3 ]] || fail "invalid settings reached the shell"
+[[ $(wc -l <"$WEATHER_TEST_CALLS") == 2 ]] || fail "invalid settings reached the shell"
 if WEATHER_TEST_STATUS=9 "$preferences_writer" example.weather animations true; then fail "shell failure was swallowed"; fi
 printf '%s\n' "Weather location and shell settings tests passed."

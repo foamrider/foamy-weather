@@ -152,4 +152,4 @@ if geoclue_location; then
   exit 0
 fi
 
-json_error "Kunne ikke finne automatisk posisjon"
+json_error "Could not find automatic location"
