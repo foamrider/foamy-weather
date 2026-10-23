@@ -69,5 +69,5 @@ test("notification summaries keep coordinate fallback labels out of command argu
   assert.equal(calls[0].join(" ").includes("12.35"), false);
   assert.equal(calls[0].join(" ").includes("-56.79"), false);
   c.configuredLocation="Example Town";c.notifySummary();
-  assert.equal(calls[1][3], "Været i Example Town");
+  assert.equal(calls[1][3], "Weather in Example Town");
 });

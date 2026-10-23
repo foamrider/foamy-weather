@@ -1,0 +1,10 @@
+singleton FoamyI18n 1.0 FoamyI18n.qml
+BarWidget 1.0 BarWidget.qml
+Panel 1.0 Panel.qml
+SafeTextField 1.0 SafeTextField.qml
+WeatherAction 1.0 WeatherAction.qml
+WeatherBackground 1.0 WeatherBackground.qml
+WeatherConditionIcon 1.0 WeatherConditionIcon.qml
+WeatherDropdown 1.0 WeatherDropdown.qml
+WeatherIcon 1.0 WeatherIcon.qml
+WeatherPopup 1.0 WeatherPopup.qml

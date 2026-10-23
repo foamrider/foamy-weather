@@ -21,7 +21,7 @@ omarchy plugin add https://github.com/foamrider/foamy-weather.git --enable
 
 1. Left-click the widget and open the settings cog.
 2. Search for a location and select a result.
-3. Choose language, units, and whether to animate the background.
+3. Choose units, and whether to animate the background.
 
 Left-click opens the forecast, middle-click refreshes, and right-click shows a
 summary. Select a day to see its hourly forecast. **Use location data** enables
@@ -66,3 +66,7 @@ Code: [MIT](LICENSE). Third-party notices:
 [Meteocons](LICENSE-METEOCONS), and [Lucide](LICENSE-LUCIDE).
 
 Provided **as is**, without warranty or guaranteed support. Use at your own risk.
+
+Language follows **Omarchy → Setup → Language** on Omarchy 4.5. Plugin language overrides are no longer used. Omarchy 4.0 displays the plugin in English. Missing translations fall back to English.
+
+Translation checks: `python3 tests/i18n-runtime.py` uses the installed shell. Set `OMARCHY_PATH` to a 4.5 source tree to check live language switching against that version.

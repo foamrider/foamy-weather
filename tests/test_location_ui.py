@@ -87,7 +87,7 @@ ShellRoot {
         id: panel
         bar: bar
         anchorItem: anchor
-        settings: ({language: "en", automaticLocation: false, animateBackground: false})
+        settings: ({automaticLocation: false, animateBackground: false})
       }
       Item { id: anchor; x: 200; width: 32; height: 32 }
     }
