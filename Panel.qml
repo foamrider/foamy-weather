@@ -79,7 +79,7 @@ Panel {
   property string settingsError: ""
   property bool searchCompleted: false
 
-  function tr(value) { return FoamyI18n.t(value) }
+  function tr(value, values) { return FoamyI18n.t(value, values) }
   function temperature(value) { return Preferences.temperature(value, units) }
   function precipitation(value) { return Preferences.precipitation(value, units) }
   function windSpeed(value) { return Preferences.wind(value, units, root.tr, FoamyI18n.number) }

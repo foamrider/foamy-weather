@@ -46,3 +46,17 @@ for (const [english, norwegian] of [
   assert.equal(I18n.text(english, "en"), english)
 }
 console.log("Weather preferences, translations and unit conversion tests passed.")
+
+// Exercise the production callback, not a test translator that bypasses it.
+const fs = require('node:fs');
+const vm = require('node:vm');
+const panelSource = fs.readFileSync(require('node:path').join(__dirname, '../Panel.qml'), 'utf8');
+const wrapper = panelSource.match(/function tr\([^\n]+\}/)[0];
+for (const language of ['en', 'no']) {
+  const context = vm.createContext({FoamyI18n: {t: (key, values) => I18n.text(key, language, values)}});
+  vm.runInContext(wrapper, context);
+  for (const [minutes, key, amount] of [[2, '%1 min ago', 2], [60, '%1 hour ago', 1], [180, '%1 hours ago', 3]]) {
+    const now = new Date(Date.parse('2026-09-24T10:00:00Z') + minutes * 60000);
+    assert.equal(P.age('2026-09-24T10:00:00Z', now, context.tr), I18n.text(key, language, amount));
+  }
+}
