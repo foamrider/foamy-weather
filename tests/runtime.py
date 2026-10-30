@@ -105,11 +105,17 @@ ShellRoot {
         shell.check(barA.saved.length === 1 && barA.saved[0].id === "foamy.weather" && barA.saved[0].settings.units === "imperial"
           && barA.saved[0].settings.animations === true, "units saved inline as the full entry: " + JSON.stringify(barA.saved))
         a.savePreference("units", "kelvin")
-        shell.check(a.settingsError !== "" && barA.saved.length === 1, "invalid value refused")
+        shell.check(a.saveError === "That value isn't allowed." && barA.saved.length === 1, "invalid value refused")
         a.close()
         break
       case 5:
         shell.check(!a.opened && !a.editingLocation, "close leaves settings")
+        shell.check(a.conditionIcon === "\u{f0597}" && a.conditionIcon.length === 2, "escaped rain glyph survives: " + escape(a.conditionIcon))
+        // Settings IPC on a closed popup must land on Settings, not the overview.
+        a.startEditingLocation()
+        shell.check(a.opened && a.editingLocation, "edit on a closed popup opens Settings")
+        a.close()
+        shell.check(!a.opened && !a.editingLocation, "close resets Settings")
         // Leader goes away (monitor unplugged): the other instance takes over.
         shell.widgets[0].destroy()
         break

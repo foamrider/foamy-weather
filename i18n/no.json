@@ -21,7 +21,6 @@
   "Searching…": "Søker…",
   "Finding location…": "Finner posisjon…",
   "Could not search for a location": "Kunne ikke søke etter sted",
-  "Could not save settings": "Kunne ikke lagre innstillingene",
   "Units": "Enheter",
   "Metric (°C, km/h, mm)": "Metrisk (°C, km/t, mm)",
   "Imperial (°F, mph, in)": "Imperial (°F, mph, in)",
@@ -117,5 +116,6 @@
   "Missing required program: %1": "Mangler nødvendig program: %1",
   "Unknown option: %1": "Ukjent valg: %1",
   "Automatic location needs XDG_RUNTIME_DIR": "Automatisk posisjon krever XDG_RUNTIME_DIR",
-  "Automatic location storage is not private": "Lagringsmappen for automatisk posisjon er ikke privat"
+  "Automatic location storage is not private": "Lagringsmappen for automatisk posisjon er ikke privat",
+  "Couldn't save the setting.": "Kunne ikke lagre innstillingen."
 }

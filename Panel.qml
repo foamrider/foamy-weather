@@ -6,7 +6,6 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "kit"
-import "kit/FoamyPrefs.js" as Prefs
 import "Model.js" as Model
 import "Preferences.js" as Preferences
 
@@ -35,11 +34,21 @@ Panel {
   Binding {
     target: WeatherService
     property: "settings"
-    value: root.settings
+    value: prefs.effectiveSettings
     when: member.isLeader
   }
 
-  readonly property var preferences: Preferences.fromSettings(settings)
+  // Saves in order, newest value per key; reads show a pick at once.
+  FoamyPrefsQueue {
+    id: prefs
+    bar: root.bar
+    moduleName: root.entryId
+    fields: Preferences.fields
+    settings: root.settings
+  }
+  FoamySettingsState { id: settingsState; panel: root; onHidden: root.clearSearch() }
+
+  readonly property var preferences: Preferences.fromSettings(prefs.effectiveSettings)
   readonly property string units: preferences.units
   readonly property bool animations: preferences.animations
   readonly property bool automaticLocation: WeatherService.automaticLocation
@@ -69,17 +78,18 @@ Panel {
   property int selectedDayIndex: 0
 
   readonly property var current: Model.currentCondition(report)
-  readonly property string conditionIcon: current ? Model.iconForSymbol(current.symbol) : "󰖐"
+  readonly property string conditionIcon: current ? Model.iconForSymbol(current.symbol) : "\u{f0590}"
   readonly property string currentTemperature: current ? Preferences.temperature(current.temperature, units, FoamyI18n.number) : "--"
   readonly property string barLabel: conditionIcon + " " + currentTemperature
   readonly property string currentDescription: current ? FoamyI18n.t(Model.descriptionForSymbol(current.symbol)) : FoamyI18n.t("No weather data")
 
   // --- settings ----------------------------------------------------------------------
-  property bool editingLocation: false
-  property bool saving: false
+  readonly property bool editingLocation: settingsState.editing
+  readonly property bool saving: prefs.busy
+  readonly property string saveError: prefs.error
+  readonly property bool canRetry: prefs.canRetry
   property bool savingLocation: false
   property string settingsError: ""
-  property var lastSave: null
   property var locationSuggestions: []
   property int suggestionIndex: 0
   property string searchText: ""
@@ -167,27 +177,12 @@ Panel {
   }
 
   function savePreference(key, value) {
-    if (saving) return
     settingsError = ""
-    lastSave = { key: key, value: value }
-    var result = Prefs.save(root.bar, root.entryId, Preferences.fields, root.settings, key, value)
-    if (!result.ok) {
-      settingsError = result.error
-      return
-    }
+    prefs.save(key, value)
     if (key === "automaticLocation" && value === true) clearSearch()
-    if (result.command.length === 0) {
-      lastSave = null
-      return
-    }
-    saving = true
-    preferencesSaveProc.command = result.command
-    preferencesSaveProc.running = true
   }
 
-  function retrySave() {
-    if (lastSave) savePreference(lastSave.key, lastSave.value)
-  }
+  function retrySave() { prefs.retry() }
 
   function clearSearch() {
     geocodeDebounce.stop()
@@ -200,18 +195,16 @@ Panel {
     root.searchCleared()
   }
 
+  // Lands on Settings even when the popup was closed (IPC edit, `s`).
   function startEditingLocation() {
-    editingLocation = true
     settingsError = ""
-    lastSave = null
     clearSearch()
+    settingsState.show()
   }
 
   function cancelEditingLocation() {
-    editingLocation = false
     settingsError = ""
-    lastSave = null
-    clearSearch()
+    settingsState.hide()
   }
 
   // The search field's text changed by typing or paste.
@@ -334,18 +327,6 @@ Panel {
       }
       WeatherService.reloadLocations()
       root.clearSearch()
-    }
-  }
-
-  Process {
-    id: preferencesSaveProc
-    onExited: function(exitCode) {
-      root.saving = false
-      if (exitCode !== 0) {
-        root.settingsError = "Could not save settings"
-        return
-      }
-      root.lastSave = null
     }
   }
 

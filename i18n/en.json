@@ -12,7 +12,6 @@
   "Searching…": "Searching…",
   "Finding location…": "Finding location…",
   "Could not search for a location": "Could not search for a location",
-  "Could not save settings": "Could not save settings",
   "Units": "Units",
   "Metric (°C, km/h, mm)": "Metric (°C, km/h, mm)",
   "Imperial (°F, mph, in)": "Imperial (°F, mph, in)",
@@ -117,5 +116,6 @@
   "Missing required program: %1": "Missing required program: %1",
   "Unknown option: %1": "Unknown option: %1",
   "Automatic location needs XDG_RUNTIME_DIR": "Automatic location needs XDG_RUNTIME_DIR",
-  "Automatic location storage is not private": "Automatic location storage is not private"
+  "Automatic location storage is not private": "Automatic location storage is not private",
+  "Couldn't save the setting.": "Couldn't save the setting."
 }

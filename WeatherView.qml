@@ -49,9 +49,6 @@ PanelKeyCatcher {
     : !c.networkReady ? FoamyI18n.t("Waiting for network…")
     : updatedText ? FoamyI18n.t("Updated %1", [updatedText]) : ""
 
-  // The hero's own type sizes: the reading is the panel's focal point, well
-  // above the shared scale (4.5's weather panel does the same).
-  readonly property int heroTemperatureSize: Style.space(60)
   readonly property real innerRadius: FoamyStyle.innerRadius(FoamyStyle.radius, FoamyStyle.borderWidth)
 
   function temperature(value) { return Preferences.temperature(value, c.units, FoamyI18n.number) }
@@ -249,13 +246,13 @@ PanelKeyCatcher {
             LayoutMirroring.enabled: false
             Label {
               text: view.current ? Preferences.temperatureValue(view.current.temperature, view.c.units, FoamyI18n.number) : "--"
-              font.pixelSize: view.heroTemperatureSize
+              font.pixelSize: FoamyStyle.font.numeral
               height: parent.height
               verticalAlignment: Text.AlignVCenter
             }
             Label {
               text: view.current ? (view.c.units === "imperial" ? "°F" : "°C") : ""
-              font.pixelSize: FoamyStyle.font.iconLarge
+              font.pixelSize: FoamyStyle.font.display
               topPadding: Style.space(6)
             }
           }
@@ -319,8 +316,7 @@ PanelKeyCatcher {
             FoamyIcon {
               anchors.verticalCenter: parent.verticalCenter
               width: FoamyStyle.iconSize; height: width
-              // kit "info" draws a megaphone (kit issue filed); pick explicit glyphs.
-              name: view.c.statusText !== "" ? "map-pin" : note.info ? "cloud" : "triangle-alert"
+              name: note.info ? "info" : "triangle-alert"
               color: note.info ? Commons.Color.accent : Commons.Color.urgent
             }
             Text {

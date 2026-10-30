@@ -48,7 +48,8 @@ Item {
     readonly property string dynamicLocationErrorText: automaticLocation ? FoamyI18n.t("Could not find automatic location") : ""
     readonly property bool saving: false
     readonly property string settingsError: ""
-    readonly property var lastSave: null
+    readonly property string saveError: ""
+    readonly property bool canRetry: false
     readonly property var locationSuggestions: preview.previewState === "settings-search" ? [
       { name: "Bergen", description: "Vestland, Norway", latitude: 60.39, longitude: 5.32 },
       { name: "Bergen", description: "Lower Saxony, Germany", latitude: 52.81, longitude: 9.96 },

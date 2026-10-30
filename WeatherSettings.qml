@@ -14,8 +14,8 @@ FoamySettingsPage {
   readonly property QtObject c: controller
 
   saving: c.saving || c.savingLocation
-  error: c.settingsError ? FoamyI18n.t(c.settingsError) : ""
-  retryable: !!c.lastSave
+  error: c.settingsError ? FoamyI18n.t(c.settingsError) : c.saveError ? FoamyI18n.t(c.saveError) : ""
+  retryable: c.canRetry
   onBack: c.cancelEditingLocation()
   onRetry: c.retrySave()
 
