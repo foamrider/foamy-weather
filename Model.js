@@ -327,16 +327,16 @@ function iconForSymbol(symbol) {
   var raw = String(symbol || "cloudy")
   var code = normalizedSymbol(raw)
   var night = /_night$/.test(raw)
-  if (code === "clearsky" || code === "fair") return night ? "󰖔" : "󰖙"
-  if (code === "partlycloudy") return night ? "󰼱" : "󰖕"
-  if (code === "cloudy") return "󰖐"
-  if (code === "fog") return "󰖑"
-  if (code.indexOf("thunder") !== -1) return code.indexOf("snow") !== -1 ? "󰙿" : "󰙾"
-  if (code.indexOf("snow") !== -1) return "󰖘"
-  if (code.indexOf("sleet") !== -1) return "󰖒"
-  if (code.indexOf("heavyrain") !== -1) return "󰖖"
-  if (code.indexOf("rain") !== -1) return "󰖗"
-  return "󰖐"
+  if (code === "clearsky" || code === "fair") return night ? "\u{f0594}" : "\u{f0599}"
+  if (code === "partlycloudy") return night ? "\u{f0f31}" : "\u{f0595}"
+  if (code === "cloudy") return "\u{f0590}"
+  if (code === "fog") return "\u{f0591}"
+  if (code.indexOf("thunder") !== -1) return code.indexOf("snow") !== -1 ? "\u{f067f}" : "\u{f067e}"
+  if (code.indexOf("snow") !== -1) return "\u{f0598}"
+  if (code.indexOf("sleet") !== -1) return "\u{f0592}"
+  if (code.indexOf("heavyrain") !== -1) return "\u{f0596}"
+  if (code.indexOf("rain") !== -1) return "\u{f0597}"
+  return "\u{f0590}"
 }
 
 function windDirection(degrees) {

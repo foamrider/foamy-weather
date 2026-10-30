@@ -92,7 +92,7 @@ assert.equal(Model.uvIndex(current.uvIndex), "2.4")
 assert.equal(Model.uvIndex(null), "—")
 assert.equal(Model.uvIndex(current.uvIndex, (v, d) => v.toFixed(d).replace(".", ",")), "2,4")
 assert.equal(Model.uvIndex(3), "3")
-assert.equal(Model.iconForSymbol(current.symbol), "󰖐")
+assert.equal(Model.iconForSymbol(current.symbol), "\u{f0590}")
 assert.equal(Model.descriptionForSymbol("partlycloudy_day"), "Partly cloudy")
 assert.equal(Model.windDirection(current.windDirection), "SV")
 
