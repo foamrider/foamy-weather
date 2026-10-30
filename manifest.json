@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "foamy.weather",
   "name": "Foamy Weather",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "foamrider",
   "description": "MET Norway weather with dynamic location and a three-day forecast",
   "kinds": [
@@ -15,7 +15,63 @@
     "displayName": "Weather",
     "description": "MET Norway weather with dynamic location and a three-day forecast",
     "category": "Info",
-    "allowMultiple": false
+    "allowMultiple": false,
+    "defaults": {
+      "units": "metric",
+      "automaticLocation": false,
+      "animations": true,
+      "refreshMinutes": 30,
+      "locationRefreshMinutes": 15,
+      "requestUserAgent": ""
+    },
+    "schema": [
+      {
+        "key": "units",
+        "type": "enum",
+        "label": "Units",
+        "defaultValue": "metric",
+        "options": [
+          "metric",
+          "imperial"
+        ]
+      },
+      {
+        "key": "automaticLocation",
+        "type": "boolean",
+        "label": "Use location data",
+        "defaultValue": false
+      },
+      {
+        "key": "animations",
+        "type": "boolean",
+        "label": "Animated background",
+        "defaultValue": true
+      },
+      {
+        "key": "refreshMinutes",
+        "type": "integer",
+        "label": "Refresh forecast every (minutes)",
+        "defaultValue": 30,
+        "min": 5,
+        "max": 1440,
+        "step": 5
+      },
+      {
+        "key": "locationRefreshMinutes",
+        "type": "integer",
+        "label": "Refresh automatic location every (minutes)",
+        "defaultValue": 15,
+        "min": 5,
+        "max": 1440,
+        "step": 5
+      },
+      {
+        "key": "requestUserAgent",
+        "type": "string",
+        "label": "User-Agent sent to MET Norway and OpenStreetMap",
+        "defaultValue": ""
+      }
+    ]
   },
   "omarchy": {
     "clonedFrom": "omarchy.weather"
