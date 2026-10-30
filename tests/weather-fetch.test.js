@@ -26,6 +26,11 @@ const sun = JSON.stringify({ properties: {
   sunset: { time: "2026-09-27T18:00:00Z" }
 } });
 
+// Cache entries other than MET's Expires/Last-Modified bookkeeping.
+async function files(dir) {
+  return (await fs.readdir(dir)).filter(name => !name.endsWith(".meta"));
+}
+
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "weather-fetch-test-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -35,10 +40,18 @@ async function fixture(t) {
   await fs.mkdir(bin);
   const responses = { forecast: { body: forecast }, sun: { body: sun } };
   const requests = [];
+  const forecastHeaders = [];
   const server = http.createServer((req, res) => {
     const kind = req.url.includes("/locationforecast/") ? "forecast" : "sun";
     requests.push(kind);
+    if (kind === "forecast") forecastHeaders.push(req.headers);
     const response = responses[kind];
+    if (kind === "forecast" && response.notModified && req.headers["if-modified-since"] === response.lastModified) {
+      res.statusCode = 304;
+      res.end();
+      return;
+    }
+    for (const [name, value] of Object.entries(response.headers || {})) res.setHeader(name, value);
     let body = Buffer.from(response.body);
     if (response.gzip) {
       body = gzipSync(body);
@@ -63,7 +76,9 @@ async function fixture(t) {
 
   const env = { ...process.env, XDG_CACHE_HOME: path.join(root, "cache"),
     PATH: `${bin}:${process.env.PATH}`, WEATHER_TEST_ROOT: root,
-    WEATHER_TEST_ORIGIN: `http://127.0.0.1:${server.address().port}` };
+    WEATHER_TEST_ORIGIN: `http://127.0.0.1:${server.address().port}`,
+    // Forced refreshes download at once unless a test asks for the minimum age.
+    MET_WEATHER_FORCE_MIN_AGE: "0" };
   // Redirect only the endpoint; the production script still runs real curl,
   // decompression, byte limiting, jq, and cache promotion.
   const wrappers = {
@@ -92,12 +107,12 @@ exec "$WEATHER_TEST_RM" "$@"
     env[`WEATHER_TEST_${name.toUpperCase()}`] = (await exec("bash", ["-c", `command -v ${name}`])).stdout.trim();
     await fs.writeFile(path.join(bin, name), `#!/bin/bash\nset -euo pipefail\n${body}`, { mode: 0o755 });
   }
-  const cacheKey = createHash("sha256").update("12.0000_34.0000").digest("hex");
+  const cacheKey = createHash("sha256").update("12.000_34.000").digest("hex");
   const forecastPath = path.join(cache, `forecast-complete-${cacheKey}.json`);
-  return { responses, requests, cache, forecastPath,
-    async run(force = false) {
+  return { responses, requests, forecastHeaders, cache, forecastPath, env,
+    async run(force = false, extraEnv = {}) {
       const request = exec("bash", [script, ...(force ? ["--force"] : [])],
-        { env, timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
+        { env: { ...env, ...extraEnv }, timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
       request.child.stdin.end("12\n34\n");
       const { stdout } = await request;
       assert.equal(await fs.access(path.join(root, "oversized-parse")).then(() => true, () => false), false,
@@ -148,11 +163,11 @@ for (const [label, options] of Object.entries({
       const report = await f.run();
       if (kind === "forecast") {
         assert.ok(report.error);
-        assert.deepEqual(await fs.readdir(f.cache), []);
+        assert.deepEqual(await files(f.cache), []);
       } else {
         assert.equal(report.stale, false);
         assert.ok(report.sun.every(day => day.sunrise === "" && day.sunset === ""));
-        assert.deepEqual(await fs.readdir(f.cache), [path.basename(f.forecastPath)]);
+        assert.deepEqual(await files(f.cache), [path.basename(f.forecastPath)]);
       }
     });
   }
@@ -207,7 +222,7 @@ for (const [label, response] of Object.entries({
     const report = await f.run();
     assert.equal(report.stale, false);
     assert.ok(report.sun.every(day => day.sunrise === "" && day.sunset === ""));
-    assert.deepEqual(await fs.readdir(f.cache), [path.basename(f.forecastPath)]);
+    assert.deepEqual(await files(f.cache), [path.basename(f.forecastPath)]);
   });
 }
 
@@ -227,3 +242,48 @@ for (const label of ["oversized", "malformed"]) {
     assert.ok((await f.run()).sun.every(day => day.sunrise && day.sunset));
   });
 }
+
+test("honours MET Expires, revalidates with If-Modified-Since and spaces forced refreshes", async t => {
+  const f = await fixture(t);
+  const lastModified = "Thu, 29 Oct 2026 10:00:00 GMT";
+  f.responses.forecast.headers = { Expires: new Date(Date.now() + 3600 * 1000).toUTCString(), "Last-Modified": lastModified };
+  assert.equal((await f.run()).stale, false);
+  assert.equal(f.forecastHeaders.length, 1);
+  // Within Expires: no request even though the fallback max age is zero.
+  await f.run(false, { MET_WEATHER_CACHE_MAX_AGE: "0" });
+  assert.equal(f.forecastHeaders.length, 1);
+  // --force inside the minimum age reuses the cache too.
+  await f.run(true, { MET_WEATHER_FORCE_MIN_AGE: "60" });
+  assert.equal(f.forecastHeaders.length, 1);
+  // Expired: revalidate; MET answers 304 and the cache is current again.
+  const old = new Date(Date.now() - 7200 * 1000);
+  await fs.utimes(f.forecastPath, old, old);
+  await fs.writeFile(f.forecastPath.replace(/\.json$/, ".meta"), `${Math.floor(Date.now() / 1000) - 10}\n${lastModified}\n`);
+  f.responses.forecast = { body: "", notModified: true, lastModified, headers: { Expires: new Date(Date.now() + 1800 * 1000).toUTCString() } };
+  const report = await f.run();
+  assert.equal(report.stale, false);
+  assert.equal(f.forecastHeaders.length, 2);
+  assert.equal(f.forecastHeaders[1]["if-modified-since"], lastModified);
+  assert.ok(Date.now() - (await fs.stat(f.forecastPath)).mtimeMs < 60000, "a 304 refreshes the cache age");
+  assert.equal(Model.currentCondition(Model.parseBundle(JSON.stringify(report))).temperature, 12);
+});
+
+test("rounds forecast coordinates to three decimals and keeps them out of cache names", async t => {
+  const f = await fixture(t);
+  await f.run();
+  const names = await fs.readdir(f.cache);
+  assert.ok(names.every(name => !name.includes("12.000") && !name.includes("34.000")));
+});
+
+test("missing programs are reported with a translatable key", async t => {
+  const f = await fixture(t);
+  const bin = path.join(f.cache, "..", "..", "minimal-bin");
+  await fs.mkdir(bin);
+  for (const name of ["bash", "jq", "date", "stat", "awk", "head", "sha256sum"]) {
+    await fs.symlink((await exec("bash", ["-c", `command -v ${name}`])).stdout.trim(), path.join(bin, name));
+  }
+  const request = exec(path.join(bin, "bash"), [script], { env: { ...f.env, PATH: bin } });
+  request.child.stdin.end("12\n34\n");
+  const report = JSON.parse((await request).stdout);
+  assert.deepEqual(report, { error: "Missing required program: %1", values: ["curl"] });
+});

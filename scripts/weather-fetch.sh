@@ -6,15 +6,23 @@ umask 077
 latitude=""
 longitude=""
 mode=${1:-}
-user_agent=${MET_WEATHER_USER_AGENT:-"foamy-weather/1.1.0 (+https://github.com/foamrider/foamy-weather)"}
+user_agent=${MET_WEATHER_USER_AGENT:-"foamy-weather/1.2.0 (+https://github.com/foamrider/foamy-weather)"}
 cache_root=${XDG_CACHE_HOME:-"$HOME/.cache"}/omarchy-weather
+# Used only when MET sent no Expires header; Expires is honoured otherwise
+# (capped at six hours). --force still waits for a minimum age between
+# downloads so repeated refresh clicks don't send repeated full requests.
 cache_max_age=${MET_WEATHER_CACHE_MAX_AGE:-1800}
+force_min_age=${MET_WEATHER_FORCE_MIN_AGE:-60}
+expires_max_age=21600
 # Bound decoded responses, including caches written by older plugin versions.
 forecast_max_bytes=$((2 * 1024 * 1024))
 sun_max_bytes=$((64 * 1024))
 
+# Errors are English translation keys; %1… values travel separately.
 json_error() {
-  jq -cn --arg error "$1" '{error: $error}'
+  local error=$1
+  shift
+  jq -cn --arg error "$error" '{error: $error, values: $ARGS.positional}' --args -- "$@"
 }
 
 valid_coordinates() {
@@ -60,9 +68,13 @@ download_bounded() {
   fi
 }
 
-for dependency in curl jq date stat awk head sha256sum; do
+if ! command -v jq >/dev/null; then
+  printf '%s\n' '{"error":"Missing required program: %1","values":["jq"]}'
+  exit 0
+fi
+for dependency in curl date stat awk head sha256sum; do
   if ! command -v "$dependency" >/dev/null; then
-    json_error "Mangler: $dependency"
+    json_error "Missing required program: %1" "$dependency"
     exit 0
   fi
 done
@@ -74,9 +86,13 @@ if (($# > 1)) || [[ -n $mode && $mode != --force ]] \
   exit 0
 fi
 
-# MET asks clients to limit coordinate precision so shared caches remain useful.
-latitude=$(awk '{ printf "%.4f", $0 }' <<<"$latitude")
-longitude=$(awk '{ printf "%.4f", $0 }' <<<"$longitude")
+# MET asks clients to limit coordinate precision so shared caches remain
+# useful. Three decimals (about 100 m) loses nothing for a forecast and
+# discloses less than MET's four-decimal maximum.
+legacy_latitude=$(awk '{ printf "%.4f", $0 }' <<<"$latitude")
+legacy_longitude=$(awk '{ printf "%.4f", $0 }' <<<"$longitude")
+latitude=$(awk '{ printf "%.3f", $0 }' <<<"$latitude")
+longitude=$(awk '{ printf "%.3f", $0 }' <<<"$longitude")
 # Opaque names keep coordinates out of filesystem-tool arguments too.
 cache_key=$(printf '%s_%s' "$latitude" "$longitude" | sha256sum)
 cache_key=${cache_key%% *}
@@ -86,34 +102,102 @@ chmod 700 "$cache_root"
 
 # Keep complete responses separate so an older compact cache cannot hide UV data.
 forecast_cache="$cache_root/forecast-complete-${cache_key}.json"
+# Expires (epoch) and Last-Modified of the cached forecast, one per line.
+forecast_meta="$cache_root/forecast-complete-${cache_key}.meta"
 forecast_temp=$(mktemp "$cache_root/.forecast.XXXXXX")
+headers_temp=$(mktemp "$cache_root/.headers.XXXXXX")
+meta_temp=$(mktemp "$cache_root/.meta.XXXXXX")
 sun_temp=$(mktemp "$cache_root/.sun.XXXXXX")
 sun_bundle=$(mktemp "$cache_root/.sun-bundle.XXXXXX")
-trap 'rm -f "$forecast_temp" "$sun_temp" "$sun_bundle"' EXIT
+trap 'rm -f "$forecast_temp" "$sun_temp" "$sun_bundle" "$headers_temp" "$meta_temp"' EXIT
 
 # Read old coordinate-named caches through private descriptors, preserving age.
-legacy_forecast_cache="$cache_root/forecast-complete-${latitude}_${longitude}.json"
+legacy_forecast_cache="$cache_root/forecast-complete-${legacy_latitude}_${legacy_longitude}.json"
 if [[ ! -e $forecast_cache ]] && valid_forecast "$legacy_forecast_cache"; then
   cat <"$legacy_forecast_cache" >"$forecast_temp"
   touch --reference=/dev/fd/3 "$forecast_temp" 3<"$legacy_forecast_cache"
   mv "$forecast_temp" "$forecast_cache"
 fi
 
+header_value() {
+  # The last response's header $1, without CR; empty when absent.
+  awk -v name="$1" 'BEGIN { name = tolower(name) ":" }
+    /^HTTP\// { value = "" }
+    tolower($1) == name { sub(/^[^:]*:[ \t]*/, ""); sub(/\r$/, ""); value = $0 }
+    END { print value }' "$headers_temp"
+}
+
+# Remember MET's Expires and Last-Modified for the next request.
+save_meta() {
+  local expires last_modified now
+  now=$(date +%s)
+  expires=$(header_value expires)
+  expires=$(date -d "$expires" +%s 2>/dev/null) || expires=""
+  [[ $expires =~ ^[0-9]+$ ]] && ((expires > now)) || expires=""
+  [[ -z $expires ]] || ((expires <= now + expires_max_age)) || expires=$((now + expires_max_age))
+  last_modified=$(header_value last-modified)
+  # It is echoed into curl's config: accept only an HTTP date.
+  [[ $last_modified =~ ^[A-Za-z0-9\ ,:+-]{1,64}$ ]] || last_modified=""
+  printf '%s\n%s\n' "$expires" "$last_modified" >"$meta_temp"
+  chmod 600 "$meta_temp"
+  mv "$meta_temp" "$forecast_meta"
+}
+
+# Prints 200, 304 or nothing (failure); the body goes to $forecast_temp.
+download_forecast() {
+  local url=$1 last_modified=$2 status
+  : >"$headers_temp"
+  if {
+    printf 'url = "%s"\n' "$url"
+    [[ -z $last_modified ]] || printf 'header = "If-Modified-Since: %s"\n' "$last_modified"
+  } | curl --fail --silent --show-error --compressed --connect-timeout 3 --max-time 10 \
+    --user-agent "$user_agent" --dump-header "$headers_temp" --config - 2>/dev/null \
+    | head -c "$((forecast_max_bytes + 1))" >"$forecast_temp"; then
+    status=$(awk '/^HTTP\// { code = $2 } END { print code }' "$headers_temp")
+    if [[ $status == 304 ]]; then
+      printf '304'
+    elif file_is_bounded "$forecast_temp" "$forecast_max_bytes" && valid_forecast "$forecast_temp"; then
+      printf '200'
+    fi
+  fi
+}
+
 cache_is_fresh=false
+cache_valid=false
+cached_expires=""
+cached_last_modified=""
 if valid_forecast "$forecast_cache"; then
-  cache_age=$(($(date +%s) - $(stat -c %Y "$forecast_cache")))
-  if (( cache_age < cache_max_age )); then
+  cache_valid=true
+  now=$(date +%s)
+  cache_age=$((now - $(stat -c %Y "$forecast_cache")))
+  if [[ -f $forecast_meta ]]; then
+    cached_expires=$(sed -n 1p "$forecast_meta")
+    cached_last_modified=$(sed -n 2p "$forecast_meta")
+    [[ $cached_expires =~ ^[0-9]+$ ]] || cached_expires=""
+    [[ $cached_last_modified =~ ^[A-Za-z0-9\ ,:+-]{1,64}$ ]] || cached_last_modified=""
+  fi
+  if [[ $mode == --force ]]; then
+    ((cache_age < force_min_age)) && cache_is_fresh=true
+  elif [[ -n $cached_expires ]]; then
+    ((now < cached_expires)) && cache_is_fresh=true
+  elif ((cache_age < cache_max_age)); then
     cache_is_fresh=true
   fi
 fi
 
 stale=false
-if [[ $mode == --force || $cache_is_fresh == false ]]; then
+if [[ $cache_is_fresh == false ]]; then
   forecast_url="https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=${latitude}&lon=${longitude}"
-  if download_bounded "$forecast_url" "$forecast_temp" "$forecast_max_bytes" 10 \
-    && valid_forecast "$forecast_temp"; then
+  [[ $cache_valid == true ]] || cached_last_modified=""
+  forecast_status=$(download_forecast "$forecast_url" "$cached_last_modified")
+  if [[ $forecast_status == 200 ]]; then
     chmod 600 "$forecast_temp"
     mv "$forecast_temp" "$forecast_cache"
+    save_meta
+  elif [[ $forecast_status == 304 ]]; then
+    # Unchanged on MET's side: the cached forecast is current again.
+    touch "$forecast_cache"
+    save_meta
   elif valid_forecast "$forecast_cache"; then
     # A failed refresh must not replace useful conditions with an empty panel.
     stale=true
@@ -127,7 +211,7 @@ fi
 for offset in 0 1 2; do
   forecast_date=$(date -d "+${offset} day" +%Y-%m-%d)
   sun_cache="$cache_root/sun-${cache_key}-${forecast_date}.json"
-  legacy_sun_cache="$cache_root/sun-${latitude}_${longitude}-${forecast_date}.json"
+  legacy_sun_cache="$cache_root/sun-${legacy_latitude}_${legacy_longitude}-${forecast_date}.json"
   if [[ ! -e $sun_cache ]] && valid_sun "$legacy_sun_cache"; then
     cat <"$legacy_sun_cache" >"$sun_temp"
     touch --reference=/dev/fd/3 "$sun_temp" 3<"$legacy_sun_cache"
