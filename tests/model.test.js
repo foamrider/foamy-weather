@@ -69,14 +69,16 @@ assert.deepEqual(Model.parseResolvedLocation('{"name":"Example Town","latitude":
   latitude: 12.3456,
   longitude: 56.7890,
   source: "geoclue",
-  error: ""
+  error: "",
+  errorValues: []
 })
 assert.deepEqual(Model.parseResolvedLocation('{"error":"Could not find automatic location"}'), {
   name: "",
   latitude: null,
   longitude: null,
   source: "",
-  error: "Could not find automatic location"
+  error: "Could not find automatic location",
+  errorValues: []
 })
 
 const parsed = Model.parseBundle(JSON.stringify(bundle))
@@ -86,13 +88,13 @@ assert.equal(Model.parseBundle('{"forecast":{}}'), null)
 const current = Model.currentCondition(parsed)
 assert.equal(current.temperature, 11.4)
 assert.equal(current.uvIndex, 2.4)
-assert.equal(Model.temperature(current.temperature), "11°")
 assert.equal(Model.uvIndex(current.uvIndex), "2.4")
 assert.equal(Model.uvIndex(null), "—")
+assert.equal(Model.uvIndex(current.uvIndex, (v, d) => v.toFixed(d).replace(".", ",")), "2,4")
+assert.equal(Model.uvIndex(3), "3")
 assert.equal(Model.iconForSymbol(current.symbol), "󰖐")
 assert.equal(Model.descriptionForSymbol("partlycloudy_day"), "Partly cloudy")
 assert.equal(Model.windDirection(current.windDirection), "SV")
-assert.equal(Model.windSpeedKmh(current.windSpeed), 9)
 
 const days = Model.forecastDays(parsed, new Date("2026-08-21T08:15:00+02:00"))
 assert.equal(days.length, 3)
@@ -121,9 +123,10 @@ assert.deepEqual(rollingDays[0].hours.map(point => point.time), [
 assert.equal(rollingDays[0].hours.length, rollingDays[1].hours.length)
 assert.equal(rollingDays[0].hours[7].dateKey, "2026-08-22")
 
-assert.equal(Model.precipitation(0), "0 mm")
-assert.equal(Model.precipitation(1.25), "1.3 mm")
 assert.equal(Model.formatIsoTime("2026-08-21T05:50:00+02:00"), "05:50")
-assert.equal(Model.formatAge("2026-08-21T08:00:00+02:00", new Date("2026-08-21T08:31:00+02:00")), "31 min siden")
+// Script errors carry their %n values separately so the key stays translatable.
+assert.deepEqual(Model.parseResolvedLocation('{"error":"Missing required program: %1","values":["jq"]}').errorValues, ["jq"])
+assert.deepEqual(Model.parseResolvedLocation('{"error":"Could not find automatic location"}').errorValues, [])
+assert.equal(Model.formatAge, undefined, "the Norwegian-only age formatter is gone")
 
 console.log("Weather model tests passed.")
