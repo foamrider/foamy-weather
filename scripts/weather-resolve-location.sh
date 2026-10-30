@@ -4,16 +4,21 @@ set -euo pipefail
 umask 077
 
 mode=${1:-}
-user_agent=${WEATHER_LOCATION_USER_AGENT:-"foamy-weather/1.1.0 (+https://github.com/foamrider/foamy-weather)"}
-runtime_root=${WEATHER_LOCATION_RUNTIME_DIR:-"${XDG_RUNTIME_DIR:-/tmp}/omarchy-weather-${UID}"}
+user_agent=${WEATHER_LOCATION_USER_AGENT:-"foamy-weather/1.2.0 (+https://github.com/foamrider/foamy-weather)"}
+# The current position is runtime data: keep it in the user's private runtime
+# directory, never in a shared /tmp fallback someone else could pre-create.
+runtime_base=${WEATHER_LOCATION_RUNTIME_DIR:-${XDG_RUNTIME_DIR:+"$XDG_RUNTIME_DIR/omarchy-weather-$UID"}}
 cache_root=${XDG_CACHE_HOME:-"$HOME/.cache"}/omarchy-weather
-location_cache="$runtime_root/current-location.json"
+location_cache=""
 location_cache_max_age=${WEATHER_LOCATION_CACHE_MAX_AGE:-900}
 label_cache_max_age=${WEATHER_LOCATION_LABEL_CACHE_MAX_AGE:-604800}
 geoclue_command=${WEATHER_GEOCLUE_COMMAND:-/usr/lib/geoclue-2.0/demos/where-am-i}
 
+# Errors are English translation keys; %1… values travel separately.
 json_error() {
-  jq -cn --arg error "$1" '{error: $error}'
+  local error=$1
+  shift
+  jq -cn --arg error "$error" '{error: $error, values: $ARGS.positional}' --args -- "$@"
 }
 
 valid_coordinates() {
@@ -46,6 +51,9 @@ cached_geoclue_location() {
   latitude=$(jq -r '.latitude // empty' "$location_cache" 2>/dev/null) || return 1
   longitude=$(jq -r '.longitude // empty' "$location_cache" 2>/dev/null) || return 1
   [[ -n $latitude && -n $longitude ]] && valid_coordinates "$latitude" "$longitude" || return 1
+  # Caches written by older versions kept four decimals.
+  latitude=$(awk '{printf "%.2f", $0}' <<<"$latitude")
+  longitude=$(awk '{printf "%.2f", $0}' <<<"$longitude")
 
   emit_location "$name" "$latitude" "$longitude" geoclue-cache
 }
@@ -55,6 +63,7 @@ location_label() {
   local longitude=$2
   local rounded_latitude rounded_longitude cache_key cache_file age label response
 
+  # A city name needs no more than about 1 km of precision.
   rounded_latitude=$(awk '{printf "%.2f", $0}' <<<"$latitude")
   rounded_longitude=$(awk '{printf "%.2f", $0}' <<<"$longitude")
   cache_key=$(printf '%s_%s' "$rounded_latitude" "$rounded_longitude" | sha256sum)
@@ -85,7 +94,7 @@ location_label() {
   response=""
   if command -v curl >/dev/null; then
     response=$(printf 'url = "%s"\n' \
-      "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1" \
+      "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${rounded_latitude}&lon=${rounded_longitude}&zoom=10&addressdetails=1" \
       | curl --fail --silent --show-error --compressed \
       --connect-timeout 3 --max-time 8 --user-agent "$user_agent" \
       --config - \
@@ -118,10 +127,11 @@ geoclue_location() {
   longitude=$(awk '/Longitude:/ {gsub(/,/, ".", $2); gsub(/[^0-9.+-]/, "", $2); print $2; exit}' <<<"$output")
   [[ -n $latitude && -n $longitude ]] && valid_coordinates "$latitude" "$longitude" || return 1
 
-  # MET already limits forecast coordinates to four decimals; use the same
-  # precision for labels and caches instead of disclosing extra precision.
-  latitude=$(awk '{printf "%.4f", $0}' <<<"$latitude")
-  longitude=$(awk '{printf "%.4f", $0}' <<<"$longitude")
+  # Round to two decimals (about 1 km): enough for a forecast and a place
+  # name, less precise than a home address, and steady across Wi-Fi jitter so
+  # small moves neither change the location nor miss the forecast cache.
+  latitude=$(awk '{printf "%.2f", $0}' <<<"$latitude")
+  longitude=$(awk '{printf "%.2f", $0}' <<<"$longitude")
 
   name=$(location_label "$latitude" "$longitude")
   temp_file=$(mktemp "$runtime_root/.current-location.XXXXXX")
@@ -131,21 +141,38 @@ geoclue_location() {
   emit_location "$name" "$latitude" "$longitude" geoclue
 }
 
-for dependency in jq awk date stat timeout sha256sum; do
+if ! command -v jq >/dev/null; then
+  printf '%s\n' '{"error":"Missing required program: %1","values":["jq"]}'
+  exit 0
+fi
+for dependency in awk date stat timeout sha256sum; do
   if ! command -v "$dependency" >/dev/null; then
-    json_error "Mangler: $dependency"
+    json_error "Missing required program: %1" "$dependency"
     exit 0
   fi
 done
 
+if [[ -n $mode && $mode != --force ]]; then
+  json_error "Unknown option: %1" "$mode"
+  exit 0
+fi
+
+if [[ -z $runtime_base ]]; then
+  json_error "Automatic location needs XDG_RUNTIME_DIR"
+  exit 0
+fi
+runtime_root=$runtime_base
+location_cache="$runtime_root/current-location.json"
 mkdir -p "$runtime_root" "$cache_root"
+# Refuse a directory someone else owns instead of trusting or chmod-ing it.
+if [[ ! -O $runtime_root || -L $runtime_root ]]; then
+  json_error "Automatic location storage is not private"
+  exit 0
+fi
 chmod 700 "$runtime_root" "$cache_root"
 
 if [[ $mode == --force ]]; then
   rm -f "$location_cache"
-elif [[ -n $mode ]]; then
-  json_error "Ukjent valg: $mode"
-  exit 0
 fi
 
 if geoclue_location; then
