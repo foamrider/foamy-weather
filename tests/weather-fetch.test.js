@@ -266,6 +266,31 @@ test("honours MET Expires, revalidates with If-Modified-Since and spaces forced 
   assert.equal(f.forecastHeaders[1]["if-modified-since"], lastModified);
   assert.ok(Date.now() - (await fs.stat(f.forecastPath)).mtimeMs < 60000, "a 304 refreshes the cache age");
   assert.equal(Model.currentCondition(Model.parseBundle(JSON.stringify(report))).temperature, 12);
+  // A 304 without Last-Modified keeps the cached validator for the next request.
+  await f.run(true);
+  assert.equal(f.forecastHeaders.length, 3);
+  assert.equal(f.forecastHeaders[2]["if-modified-since"], lastModified);
+});
+
+test("migrates 1.1 caches hashed from four-decimal coordinates", async t => {
+  const f = await fixture(t);
+  const oldKey = createHash("sha256").update("12.0000_34.0000").digest("hex");
+  const oldPath = path.join(f.cache, `forecast-complete-${oldKey}.json`);
+  await fs.writeFile(oldPath, forecast);
+  const old = new Date(Date.now() - 3 * 3600 * 1000);
+  await fs.utimes(oldPath, old, old);
+  for (const offset of [0, 1, 2]) {
+    const date = (await exec("date", ["-d", `+${offset} day`, "+%Y-%m-%d"])).stdout.trim();
+    await fs.writeFile(path.join(f.cache, `sun-${oldKey}-${date}.json`), sun);
+  }
+  // MET is down after the upgrade: the old forecast is still shown, as stale data.
+  f.responses.forecast.status = 503;
+  f.responses.sun.status = 503;
+  const report = await f.run();
+  assert.equal(report.stale, true);
+  assert.equal(Model.currentCondition(Model.parseBundle(JSON.stringify(report))).temperature, 12);
+  assert.ok(report.sun.every(day => day.sunrise && day.sunset), "sun caches migrate too");
+  assert.equal(Math.round((await fs.stat(f.forecastPath)).mtimeMs / 1000), Math.round(old.getTime() / 1000), "age preserved");
 });
 
 test("rounds forecast coordinates to three decimals and keeps them out of cache names", async t => {

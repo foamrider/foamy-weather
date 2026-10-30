@@ -96,6 +96,9 @@ longitude=$(awk '{ printf "%.3f", $0 }' <<<"$longitude")
 # Opaque names keep coordinates out of filesystem-tool arguments too.
 cache_key=$(printf '%s_%s' "$latitude" "$longitude" | sha256sum)
 cache_key=${cache_key%% *}
+# Versions up to 1.1 hashed the four-decimal coordinates.
+legacy_cache_key=$(printf '%s_%s' "$legacy_latitude" "$legacy_longitude" | sha256sum)
+legacy_cache_key=${legacy_cache_key%% *}
 
 mkdir -p "$cache_root"
 chmod 700 "$cache_root"
@@ -112,12 +115,14 @@ sun_bundle=$(mktemp "$cache_root/.sun-bundle.XXXXXX")
 trap 'rm -f "$forecast_temp" "$sun_temp" "$sun_bundle" "$headers_temp" "$meta_temp"' EXIT
 
 # Read old coordinate-named caches through private descriptors, preserving age.
-legacy_forecast_cache="$cache_root/forecast-complete-${legacy_latitude}_${legacy_longitude}.json"
-if [[ ! -e $forecast_cache ]] && valid_forecast "$legacy_forecast_cache"; then
+# Try the 1.1 hashed name, then the older coordinate-named one.
+for legacy_forecast_cache in "$cache_root/forecast-complete-${legacy_cache_key}.json" \
+  "$cache_root/forecast-complete-${legacy_latitude}_${legacy_longitude}.json"; do
+  [[ ! -e $forecast_cache ]] && valid_forecast "$legacy_forecast_cache" || continue
   cat <"$legacy_forecast_cache" >"$forecast_temp"
   touch --reference=/dev/fd/3 "$forecast_temp" 3<"$legacy_forecast_cache"
   mv "$forecast_temp" "$forecast_cache"
-fi
+done
 
 header_value() {
   # The last response's header $1, without CR; empty when absent.
@@ -127,15 +132,18 @@ header_value() {
     END { print value }' "$headers_temp"
 }
 
-# Remember MET's Expires and Last-Modified for the next request.
+# Remember MET's Expires and Last-Modified for the next request. $1 is the
+# validator to keep when the response sends none (a 304 for an unchanged
+# forecast); a new 200 body passes nothing.
 save_meta() {
-  local expires last_modified now
+  local expires last_modified now fallback=${1:-}
   now=$(date +%s)
   expires=$(header_value expires)
   expires=$(date -d "$expires" +%s 2>/dev/null) || expires=""
   [[ $expires =~ ^[0-9]+$ ]] && ((expires > now)) || expires=""
   [[ -z $expires ]] || ((expires <= now + expires_max_age)) || expires=$((now + expires_max_age))
   last_modified=$(header_value last-modified)
+  [[ -n $last_modified ]] || last_modified=$fallback
   # It is echoed into curl's config: accept only an HTTP date.
   [[ $last_modified =~ ^[A-Za-z0-9\ ,:+-]{1,64}$ ]] || last_modified=""
   printf '%s\n%s\n' "$expires" "$last_modified" >"$meta_temp"
@@ -197,7 +205,7 @@ if [[ $cache_is_fresh == false ]]; then
   elif [[ $forecast_status == 304 ]]; then
     # Unchanged on MET's side: the cached forecast is current again.
     touch "$forecast_cache"
-    save_meta
+    save_meta "$cached_last_modified"
   elif valid_forecast "$forecast_cache"; then
     # A failed refresh must not replace useful conditions with an empty panel.
     stale=true
@@ -211,12 +219,13 @@ fi
 for offset in 0 1 2; do
   forecast_date=$(date -d "+${offset} day" +%Y-%m-%d)
   sun_cache="$cache_root/sun-${cache_key}-${forecast_date}.json"
-  legacy_sun_cache="$cache_root/sun-${legacy_latitude}_${legacy_longitude}-${forecast_date}.json"
-  if [[ ! -e $sun_cache ]] && valid_sun "$legacy_sun_cache"; then
+  for legacy_sun_cache in "$cache_root/sun-${legacy_cache_key}-${forecast_date}.json" \
+    "$cache_root/sun-${legacy_latitude}_${legacy_longitude}-${forecast_date}.json"; do
+    [[ ! -e $sun_cache ]] && valid_sun "$legacy_sun_cache" || continue
     cat <"$legacy_sun_cache" >"$sun_temp"
     touch --reference=/dev/fd/3 "$sun_temp" 3<"$legacy_sun_cache"
     mv "$sun_temp" "$sun_cache"
-  fi
+  done
 
   sun_valid=false
   if valid_sun "$sun_cache"; then
