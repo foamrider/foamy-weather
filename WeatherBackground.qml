@@ -21,7 +21,7 @@ Item {
   readonly property var conditions: Scene.conditions(current, now, location)
   // The software renderer (CPU rendering) draws neither shaders nor
   // MultiEffect; keep the static header there.
-  readonly property bool supported: GraphicsInfo.api !== GraphicsInfo.Software
+  readonly property bool supported: GraphicsInfo.api !== GraphicsInfo.Software && GraphicsInfo.api !== GraphicsInfo.Unknown
   readonly property bool drawable: supported && shown && conditions.available && sky.status !== ShaderEffect.Error
   readonly property bool animating: drawable && animate
   property real elapsed: 0

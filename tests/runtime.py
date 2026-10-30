@@ -89,6 +89,9 @@ ShellRoot {
         shell.check(a.opened && a.popup.bodyItem !== null, "opening builds the body")
         shell.check(!b.popup.bodyItem, "other monitor's body still unbuilt")
         shell.check(a.popup.width >= 559 || a.popup.contentWidth >= 559, "wide popup (560): " + a.popup.contentWidth)
+        var bandSurface = shell.find(a.popup.bodyItem, "foamyHeroBandSurface")
+        shell.check(bandSurface !== null && bandSurface.parent.y === 0 && bandSurface.parent.width === a.popup.bodyItem.width, "hero band is first and full width")
+        shell.check(bandSurface.parent.background === null, "software renderer: band keeps the static wash instead of the sky")
         a.startEditingLocation()
         break
       case 4:

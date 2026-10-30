@@ -1,12 +1,13 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Effects
+import QtQuick.Layouts
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "kit"
 import "Model.js" as Model
 import "Preferences.js" as Preferences
+import "WeatherScene.js" as Scene
 
 // The weather popup body: sky hero with the header, readings, three-day and
 // hourly forecasts, attribution, and the settings page. Built on first open
@@ -49,7 +50,11 @@ PanelKeyCatcher {
     : !c.networkReady ? FoamyI18n.t("Waiting for network…")
     : updatedText ? FoamyI18n.t("Updated %1", [updatedText]) : ""
 
-  readonly property real innerRadius: FoamyStyle.innerRadius(FoamyStyle.radius, FoamyStyle.borderWidth)
+  // The sky shader and its blur need a GPU renderer (known once the popup
+  // window exists) and weather to show.
+  readonly property bool skyAvailable: c.animations && GraphicsInfo.api !== GraphicsInfo.Software
+    && GraphicsInfo.api !== GraphicsInfo.Unknown
+    && Scene.conditions(current, c.now, c.configuredLocationState).available
 
   function temperature(value) { return Preferences.temperature(value, c.units, FoamyI18n.number) }
   function precipitation(value) { return Preferences.precipitation(value, c.units, FoamyI18n.number) }
@@ -121,6 +126,22 @@ PanelKeyCatcher {
     font.pixelSize: FoamyStyle.font.subtitle
   }
 
+  Component {
+    id: skyComponent
+    WeatherBackground {
+      anchors.fill: parent
+      current: view.current
+      now: view.c.now
+      location: view.c.configuredLocationState
+      // Drawn only while the popup shows it; a still frame under reduced motion.
+      shown: view.c.opened && !view.c.editingLocation && band.y + band.height > weatherScroll.contentY
+      animate: !FoamyMotion.reduceMotion
+      surfaceColor: Commons.Color.popups.background
+      lightTheme: view.lightTheme
+      cornerRadius: band.topRadius
+    }
+  }
+
   Flickable {
     id: weatherScroll
     visible: !view.c.editingLocation
@@ -135,79 +156,20 @@ PanelKeyCatcher {
       id: weatherColumn
       width: parent.width
 
-      Item {
-        id: weatherHero
+      FoamyHeroBand {
+        id: band
         width: parent.width
-        height: heroHeader.implicitHeight + heroReading.implicitHeight + FoamyStyle.padding
-
-        // Keep the theme background available before weather data or shader readiness.
-        Canvas {
-          id: headerBackground
-          readonly property real cornerRadius: Math.max(0, Math.min(width / 2, height, view.innerRadius))
-          readonly property color accent: Commons.Color.accent
-          readonly property color surface: Commons.Color.popups.background
-          anchors.fill: parent
-          onCornerRadiusChanged: requestPaint()
-          onAccentChanged: requestPaint()
-          onSurfaceChanged: requestPaint()
-          onWidthChanged: requestPaint()
-          onHeightChanged: requestPaint()
-          onPaint: {
-            var ctx = getContext("2d")
-            ctx.reset()
-            var radius = cornerRadius
-            ctx.beginPath()
-            ctx.moveTo(radius, 0); ctx.lineTo(width - radius, 0)
-            ctx.arcTo(width, 0, width, radius, radius)
-            ctx.lineTo(width, height); ctx.lineTo(0, height); ctx.lineTo(0, radius)
-            ctx.arcTo(0, 0, radius, 0, radius); ctx.closePath(); ctx.clip()
-            var gradient = ctx.createLinearGradient(0, 0, width * 0.5, height)
-            gradient.addColorStop(0, Qt.tint(surface, Qt.alpha(accent, 0.08)))
-            gradient.addColorStop(1, surface)
-            ctx.fillStyle = gradient; ctx.fillRect(0, 0, width, height)
-            var glow = ctx.createRadialGradient(width * 0.9, 0, 0, width * 0.9, 0, width * 0.85)
-            glow.addColorStop(0, Qt.alpha(accent, 0.17))
-            glow.addColorStop(1, "transparent")
-            ctx.fillStyle = glow; ctx.fillRect(0, 0, width, height)
-          }
-        }
-
-        WeatherBackground {
-          id: sky
-          anchors.fill: parent
-          current: view.current
-          now: view.c.now
-          location: view.c.configuredLocationState
-          visible: view.c.animations
-          // Drawn only while the popup shows it; a still frame under reduced motion.
-          shown: view.c.animations && view.c.opened && !view.c.editingLocation
-            && weatherHero.y + weatherHero.height > weatherScroll.contentY
-          animate: !FoamyMotion.reduceMotion
-          surfaceColor: Commons.Color.popups.background
-          lightTheme: view.lightTheme
-          cornerRadius: view.innerRadius
-        }
-
-        FoamyHeader {
-          id: heroHeader
-          width: parent.width
-          iconName: "map-pin"
-          title: view.c.reportLocation || FoamyI18n.t("Choose location")
-          meta: view.headerMeta
-          settingsHasCursor: cursor.at(view.settingsStop)
-          onSettingsClicked: view.c.startEditingLocation()
-          onSettingsHovered: function(hovered) { if (hovered) cursor.hover(view.settingsStop) }
-          // Shade text and icons instead of hiding the sky behind them.
-          layer.enabled: sky.drawable
-          layer.effect: MultiEffect {
-            shadowEnabled: true
-            shadowColor: Commons.Color.popups.background
-            shadowOpacity: 0.9
-            shadowBlur: 0.25
-            blurMax: 8
-            shadowVerticalOffset: 1
-          }
-
+        iconName: "map-pin"
+        title: view.c.reportLocation || FoamyI18n.t("Choose location")
+        meta: view.headerMeta
+        settingsHasCursor: cursor.at(view.settingsStop)
+        onSettingsClicked: view.c.startEditingLocation()
+        onSettingsHovered: function(hovered) { if (hovered) cursor.hover(view.settingsStop) }
+        // The MET-driven sky is the band's picture when it can be drawn;
+        // otherwise (animations setting off, CPU rendering, no data) the
+        // kit's static wash.
+        background: view.skyAvailable ? skyComponent : null
+        trailing: [
           FoamyAction {
             iconName: "refresh-cw"
             foreground: FoamyPalette.secondaryText
@@ -218,73 +180,64 @@ PanelKeyCatcher {
             onHoveredChanged: if (hovered) cursor.hover(view.refreshStop)
             onClicked: view.activate(view.refreshStop)
           }
-        }
+        ]
 
-        Column {
-          id: heroReading
-          anchors.top: heroHeader.bottom
-          anchors.topMargin: -FoamyStyle.gap
-          anchors.horizontalCenter: parent.horizontalCenter
-          width: parent.width - FoamyStyle.padding * 2
-          spacing: FoamyStyle.gapSmall
-          layer.enabled: sky.drawable
-          layer.effect: MultiEffect {
-            shadowEnabled: true
-            shadowColor: Commons.Color.popups.background
-            shadowOpacity: 0.9
-            shadowBlur: 0.25
-            blurMax: 8
-            shadowVerticalOffset: 1
-          }
+        // Hero: the reading, the condition and today's range.
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: FoamyStyle.padding
 
           Row {
-            anchors.horizontalCenter: parent.horizontalCenter
-            height: Style.space(68)
+            Layout.alignment: Qt.AlignVCenter
             spacing: FoamyStyle.gapSmall
             // A reading and its unit ("13 °C") stay in that order in a
             // right-to-left layout too, the way bidi text keeps them.
             LayoutMirroring.enabled: false
             Label {
+              id: reading
               text: view.current ? Preferences.temperatureValue(view.current.temperature, view.c.units, FoamyI18n.number) : "--"
               font.pixelSize: FoamyStyle.font.numeral
-              height: parent.height
-              verticalAlignment: Text.AlignVCenter
             }
             Label {
               text: view.current ? (view.c.units === "imperial" ? "°F" : "°C") : ""
               font.pixelSize: FoamyStyle.font.display
-              topPadding: Style.space(6)
+              topPadding: Style.space(8)
             }
           }
-          Row {
-            anchors.horizontalCenter: parent.horizontalCenter
+
+          Column {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
             spacing: FoamyStyle.gapSmall
-            WeatherConditionIcon {
-              width: Style.space(28); height: width
-              symbol: view.current ? view.current.symbol : "cloudy"
-              lightTheme: view.lightTheme
-              anchors.verticalCenter: parent.verticalCenter
+            Row {
+              width: parent.width
+              spacing: FoamyStyle.gap
+              WeatherConditionIcon {
+                width: Style.space(28); height: width
+                symbol: view.current ? view.current.symbol : "cloudy"
+                lightTheme: view.lightTheme
+                anchors.verticalCenter: parent.verticalCenter
+              }
+              Label {
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - Style.space(28) - parent.spacing
+                horizontalAlignment: Text.AlignLeft
+                text: view.c.currentDescription
+                font.pixelSize: FoamyStyle.font.iconLarge
+                elide: Text.ElideRight
+              }
             }
             Label {
-              anchors.verticalCenter: parent.verticalCenter
-              text: view.c.currentDescription
-              font.pixelSize: FoamyStyle.font.iconLarge
-              width: Math.min(implicitWidth, weatherHero.width - Style.space(80))
+              width: parent.width
+              horizontalAlignment: Text.AlignLeft
               elide: Text.ElideRight
+              text: !view.current ? (view.c.loading ? FoamyI18n.t("Loading weather…") : FoamyI18n.t("Waiting for weather"))
+                : view.forecastDays.length
+                  ? FoamyI18n.t("High %1 · Low %2", [view.temperature(view.forecastDays[0].high), view.temperature(view.forecastDays[0].low)]) : ""
+              visible: text !== ""
+              color: FoamyPalette.secondaryText
+              font.pixelSize: FoamyStyle.font.body
             }
-          }
-          Label {
-            width: parent.width; horizontalAlignment: Text.AlignHCenter
-            visible: view.forecastDays.length > 0
-            text: view.forecastDays.length
-              ? FoamyI18n.t("High %1 · Low %2", [view.temperature(view.forecastDays[0].high), view.temperature(view.forecastDays[0].low)]) : ""
-            color: FoamyPalette.secondaryText; font.pixelSize: FoamyStyle.font.body
-          }
-          Label {
-            width: parent.width; horizontalAlignment: Text.AlignHCenter
-            visible: !view.current
-            text: view.c.loading ? FoamyI18n.t("Loading weather…") : FoamyI18n.t("Waiting for weather")
-            color: FoamyPalette.secondaryText; font.pixelSize: FoamyStyle.font.body
           }
         }
       }
@@ -293,7 +246,7 @@ PanelKeyCatcher {
         id: body
         x: FoamyStyle.padding
         width: parent.width - FoamyStyle.padding * 2
-        topPadding: FoamyStyle.gap
+        topPadding: FoamyStyle.sectionGap
         bottomPadding: FoamyStyle.gapLarge
 
         // A note about what is shown: loading a new place, stale data, or an error.
