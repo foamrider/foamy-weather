@@ -1,41 +1,23 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
-import Quickshell.Networking
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
+import "kit"
+import "kit/FoamyPrefs.js" as Prefs
 import "Model.js" as Model
 import "Preferences.js" as Preferences
 
+// One per bar (4.5 draws a bar per monitor). Weather data, timers and helper
+// processes live once per shell in WeatherService; this Panel owns its popup,
+// the location search, and saving settings. WeatherView draws the popup body
+// from the properties and functions below (preview/Preview.qml feeds it a
+// mock with the same shape).
 Panel {
   id: root
 
-  // Keep the window and shaders warm; release the heavier sections after the fade.
-  property bool popupContentActive: false
-  property bool settingsContentActive: false
-  function preparePopup() { popupUnload.stop(); popupContentActive = true }
-  Connections {
-    target: root
-    function onEditingLocationChanged() {
-      if (root.editingLocation) root.settingsContentActive = true
-    }
-    function onOpenedChanged() {
-      if (root.opened) root.preparePopup()
-      else popupUnload.restart()
-    }
-  }
-  Timer {
-    id: popupUnload
-    interval: 1000
-    onTriggered: {
-      if (!root.opened && !panel.visible) {
-        root.popupContentActive = false
-        root.settingsContentActive = false
-      }
-    }
-  }
   moduleName: "foamy.weather"
   ipcTarget: "foamy.weather"
   manageIpc: false
@@ -44,172 +26,96 @@ Panel {
   property var hostWidget: null
   property bool openedFromHotkey: false
   readonly property var barIdentity: hostWidget || root
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
-  readonly property color urgent: bar ? bar.urgent : Color.urgent
-  readonly property string iconFontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property string fontFamily: "sans-serif"
-  readonly property color secondaryForeground: Qt.tint(Color.popups.background, Qt.rgba(foreground.r, foreground.g, foreground.b, 0.76))
-  readonly property color outlineColor: Qt.tint(Color.popups.background, Qt.rgba(foreground.r, foreground.g, foreground.b, 0.22))
-  readonly property color cardColor: Qt.tint(Color.popups.background, Qt.rgba(foreground.r, foreground.g, foreground.b, 0.055))
-  readonly property color selectedCardColor: Qt.tint(Color.popups.background, Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.20))
-  readonly property bool lightTheme: Color.popups.background.r + Color.popups.background.g + Color.popups.background.b > 1.5
-  readonly property color rainColor: lightTheme ? "#087d84" : "#94e2d5"
-  readonly property var displayHours: selectedDay ? selectedDay.hours : []
-  readonly property string hourSummary: {
-    for (var i = 0; i < displayHours.length; i++) {
-      if (displayHours[i].precipitation > 0) return root.tr("Precipitation from ") + displayHours[i].time.slice(0, 2)
-    }
-    return root.tr("No precipitation expected")
-  }
-  readonly property string uvLabel: !current || current.uvIndex === null ? "—"
-    : current.uvIndex < 3 ? root.tr("Low") : current.uvIndex < 6 ? root.tr("Moderate") : current.uvIndex < 8 ? root.tr("High") : root.tr("Very high")
-  function windLabel(degrees) {
-    var direction = Model.windDirection(degrees)
-    var names = { N: root.tr("Northerly"), NØ: root.tr("Northeasterly"), Ø: root.tr("Easterly"), SØ: root.tr("Southeasterly"), S: root.tr("Southerly"), SV: root.tr("Southwesterly"), V: root.tr("Westerly"), NV: root.tr("Northwesterly") }
-    return names[direction] || direction
+  readonly property string entryId: hostWidget && hostWidget.moduleName ? hostWidget.moduleName : root.moduleName
+  readonly property alias popup: popup
+
+  // --- shared state ----------------------------------------------------------------
+  FoamyMember { id: member; scope: "weather"; demanding: root.opened }
+  // Every instance shows the same widget entry; the leader hands its settings over.
+  Binding {
+    target: WeatherService
+    property: "settings"
+    value: root.settings
+    when: member.isLeader
   }
 
-  readonly property string configRoot: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omarchy"
-  property string widgetId: ""
   readonly property var preferences: Preferences.fromSettings(settings)
-  readonly property string language: FoamyI18n.language
   readonly property string units: preferences.units
-  readonly property bool automaticLocation: preferences.automaticLocation
-  readonly property bool preferencesReady: widgetId !== ""
-  property string settingsError: ""
-  property bool searchCompleted: false
+  readonly property bool animations: preferences.animations
+  readonly property bool automaticLocation: WeatherService.automaticLocation
+  readonly property var report: WeatherService.report
+  readonly property bool reportCurrent: WeatherService.reportCurrent
+  readonly property bool loading: WeatherService.loading
+  readonly property bool networkReady: WeatherService.networkReady
+  readonly property bool resolvingLocation: WeatherService.resolvingLocation
+  readonly property var configuredLocationState: WeatherService.configuredLocationState
+  readonly property string configuredLocation: WeatherService.configuredLocation
+  // The place the shown report belongs to: while a new location loads, the
+  // previous report stays up under its own name.
+  readonly property string reportLocation: report && !reportCurrent ? String(report.locationName || "") : configuredLocation
+  readonly property string errorMessage: WeatherService.errorMessage
+  readonly property string errorText: errorMessage ? FoamyI18n.t(errorMessage, WeatherService.errorValues) : ""
+  readonly property bool errorIsStale: errorMessage === "Showing last known weather"
+  readonly property string statusText: report && !reportCurrent && loading
+    ? (configuredLocation ? FoamyI18n.t("Loading weather for %1…", [configuredLocation]) : FoamyI18n.t("Loading weather for the new location…"))
+    : ""
+  readonly property string dynamicLocationErrorText: WeatherService.dynamicLocationError
+    ? FoamyI18n.t(WeatherService.dynamicLocationError, WeatherService.dynamicLocationErrorValues) : ""
+  readonly property bool automaticLabel: automaticLocation && String(configuredLocationState.source || "").indexOf("geoclue") === 0
 
-  function tr(value, values) { return FoamyI18n.t(value, values) }
-  function temperature(value) { return Preferences.temperature(value, units) }
-  function precipitation(value) { return Preferences.precipitation(value, units) }
-  function windSpeed(value) { return Preferences.wind(value, units, root.tr, FoamyI18n.number) }
-
-  function savePreference(name, value) {
-    if (preferencesSaveProc.running) return
-    if (!widgetId) {
-      settingsError = "Could not read settings"
-      return
-    }
-    settingsError = ""
-    // Let the shell mutate its live config; writing shell.json directly races it.
-    preferencesSaveProc.command = [localPathFromUrl(Qt.resolvedUrl("scripts/weather-preferences.sh")), widgetId, name, JSON.stringify(value)]
-    preferencesSaveProc.running = true
-  }
-
-  property var report: null
-  property string errorMessage: ""
-  property bool loading: false
-  property int retries: 0
-  property int locationRetries: 0
-  property int selectedDayIndex: 0
+  // Forecast rows exist only while the popup is shown (or fading out).
+  readonly property bool contentActive: root.opened || popup.visible
   property date now: new Date()
-
-  property var storedLocationState: ({ name: "", latitude: null, longitude: null })
-  property var localLocationState: ({ name: "", latitude: null, longitude: null })
-  property var dynamicLocationState: ({ name: "", latitude: null, longitude: null, source: "" })
-  property string dynamicLocationError: ""
-  readonly property bool manualLocationEnabled: localLocationState.latitude !== null
-    && localLocationState.longitude !== null
-  readonly property var configuredLocationState: automaticLocation ? dynamicLocationState
-    : (manualLocationEnabled ? localLocationState : storedLocationState)
-  readonly property string configuredLocation: configuredLocationState.name
-  readonly property bool hasCoordinates: !isNaN(parseFloat(String(configuredLocationState.latitude)))
-    && !isNaN(parseFloat(String(configuredLocationState.longitude)))
-  readonly property string coordinateQuery: hasCoordinates
-    ? String(configuredLocationState.latitude) + "," + String(configuredLocationState.longitude) : ""
-
-  readonly property var locationField: locationSettings.item ? locationSettings.item.locationField : null
-  readonly property var automaticLocationToggle: locationSettings.item ? locationSettings.item.automaticLocationToggle : null
-  property bool editingLocation: false
-  property bool savingLocation: false
-  property var locationSuggestions: []
-  property int suggestionIndex: 0
-  property string geocodePendingQuery: ""
-  property string geocodeActiveQuery: ""
+  property int selectedDayIndex: 0
 
   readonly property var current: Model.currentCondition(report)
-  // Settings do not need forecast delegates; retain the selected day while editing.
-  readonly property var forecastDays: popupContentActive && !editingLocation ? Model.forecastDays(report, now) : []
-  readonly property var selectedDay: forecastDays.length
-    ? forecastDays[Math.max(0, Math.min(selectedDayIndex, forecastDays.length - 1))] : null
   readonly property string conditionIcon: current ? Model.iconForSymbol(current.symbol) : "󰖐"
-  readonly property string currentTemperature: current ? root.temperature(current.temperature) : "--"
+  readonly property string currentTemperature: current ? Preferences.temperature(current.temperature, units, FoamyI18n.number) : "--"
   readonly property string barLabel: conditionIcon + " " + currentTemperature
-  readonly property string currentDescription: current ? tr(Model.descriptionForSymbol(current.symbol)) : root.tr("No weather data")
-  readonly property string updatedText: report && report.fetchedAt ? Preferences.age(report.fetchedAt, now, root.tr) : ""
+  readonly property string currentDescription: current ? FoamyI18n.t(Model.descriptionForSymbol(current.symbol)) : FoamyI18n.t("No weather data")
 
-  readonly property string requestUserAgent: String(setting("requestUserAgent", ""))
-  readonly property string fetchScript: localPathFromUrl(Qt.resolvedUrl("scripts/weather-fetch.sh"))
-  readonly property string locationScript: localPathFromUrl(Qt.resolvedUrl("scripts/weather-location.sh"))
-  readonly property string locationResolverScript: localPathFromUrl(Qt.resolvedUrl("scripts/weather-resolve-location.sh"))
-  readonly property int refreshMinutes: Math.max(5, parseInt(setting("refreshMinutes", 30), 10) || 30)
-  readonly property int locationRefreshMinutes: Math.max(5, parseInt(setting("locationRefreshMinutes", 15), 10) || 15)
-  // WARP can leave NetworkManager's external probe at Limited while routed
-  // internet access is working, so only block truly offline/portal states.
-  readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full
-    || Networking.connectivity === NetworkConnectivity.Limited
-  property bool networkSettled: false
-  readonly property bool networkReady: networkConnected && networkSettled
-  onNetworkConnectedChanged: networkSettled = false
-  Timer {
-    // NetworkManager can report a connection before DNS and routes are usable.
-    interval: 2000
-    running: root.networkConnected && !root.networkSettled
-    onTriggered: root.networkSettled = true
-  }
+  // --- settings ----------------------------------------------------------------------
+  property bool editingLocation: false
+  property bool saving: false
+  property bool savingLocation: false
+  property string settingsError: ""
+  property var lastSave: null
+  property var locationSuggestions: []
+  property int suggestionIndex: 0
+  property string searchText: ""
+  property bool searchCompleted: false
+  property string geocodePendingQuery: ""
+  property string geocodeActiveQuery: ""
+  readonly property bool searching: geocodeProc.running
+  readonly property string locationScript: WeatherService.localPath(Qt.resolvedUrl("scripts/weather-location.sh"))
 
-  onNetworkReadyChanged: {
-    retryTimer.stop()
-    locationRetryTimer.stop()
-    retries = 0
-    locationRetries = 0
-  }
+  signal searchCleared()
 
-  onCoordinateQueryChanged: {
-    retries = 0
-    report = null
-    weatherProc.running = false
-    Qt.callLater(function() { root.refresh(false) })
-  }
-
-  onAutomaticLocationChanged: {
-    locationRetryTimer.stop()
-    locationRetries = 0
-    locationProc.running = false
-    dynamicLocationError = ""
-    if (automaticLocation) Qt.callLater(function() { root.resolveLocation(false) })
-  }
-
-  onForecastDaysChanged: {
-    if (!editingLocation && selectedDayIndex >= forecastDays.length) selectedDayIndex = Math.max(0, forecastDays.length - 1)
-  }
-
-  function localPathFromUrl(url) {
-    var value = String(url || "")
-    if (value.indexOf("file://") === 0) value = value.slice(7)
-    return decodeURIComponent(value)
+  function windLabel(degrees) {
+    var direction = Model.windDirection(degrees)
+    var names = { N: "Northerly", NØ: "Northeasterly", Ø: "Easterly", SØ: "Southeasterly", S: "Southerly", SV: "Southwesterly", V: "Westerly", NV: "Northwesterly" }
+    return names[direction] ? FoamyI18n.t(names[direction]) : direction
   }
 
   function open() {
-    preparePopup()
     openedFromHotkey = false
     setCenterHoverRevealSuppressed(false)
-    root.controller.show()
-    locationFile.reload()
-    localLocationFile.reload()
-    root.refresh(false)
+    showPopup()
   }
 
   function openFromHotkey() {
-    preparePopup()
     openedFromHotkey = true
-    root.controller.show()
-    locationFile.reload()
-    localLocationFile.reload()
-    root.refresh(false)
+    showPopup()
     Qt.callLater(function() {
       if (root.opened) setCenterHoverRevealSuppressed(true)
     })
+  }
+
+  function showPopup() {
+    now = new Date()
+    root.controller.show()
+    WeatherService.reloadLocations()
+    WeatherService.refresh(false)
   }
 
   function close() {
@@ -221,6 +127,11 @@ Panel {
   function toggle() {
     if (root.opened) root.close()
     else root.openFromHotkey()
+  }
+
+  function refresh(force) {
+    now = new Date()
+    WeatherService.refresh(force === true)
   }
 
   function switchPanel(direction) {
@@ -236,64 +147,46 @@ Panel {
       root.bar.centerHoverRevealSuppressed = value
   }
 
-  function refresh(force) {
-    now = new Date()
-    if (!networkReady) {
-      loading = false
-      return
-    }
-    if (!hasCoordinates) {
-      loading = false
-      errorMessage = "Choose a location to load weather"
-      return
-    }
-    if (weatherProc.running) return
-
-    loading = true
-    errorMessage = ""
-    weatherProc.command = force ? [fetchScript, "--force"] : [fetchScript]
-    // Process arguments are visible to other users through procfs; use the private pipe.
-    weatherProc.requestInput = String(configuredLocationState.latitude) + "\n"
-      + String(configuredLocationState.longitude) + "\n"
-    if (requestUserAgent)
-      weatherProc.command = ["env", "MET_WEATHER_USER_AGENT=" + requestUserAgent].concat(weatherProc.command)
-    weatherProc.stdinEnabled = true
-    weatherProc.running = true
-  }
-
-  function resolveLocation(force) {
-    if (!preferencesReady || !networkReady || !automaticLocation || locationProc.running) return
-    locationProc.command = force ? [locationResolverScript, "--force"] : [locationResolverScript]
-    if (requestUserAgent)
-      locationProc.command = ["env", "WEATHER_LOCATION_USER_AGENT=" + requestUserAgent].concat(locationProc.command)
-    locationProc.running = true
-  }
-
-  function scheduleRetry() {
-    loading = false
-    if (!networkReady || retries >= 3) return
-    retryTimer.interval = 2500 * Math.pow(2, retries)
-    retries++
-    retryTimer.restart()
-  }
-
   function notifySummary() {
     if (!current) {
       root.openFromHotkey()
       return
     }
-    var wind = windSpeed(current.windSpeed)
+    var wind = Preferences.wind(current.windSpeed, units, FoamyI18n.t, FoamyI18n.number)
     var windDirection = windLabel(current.windDirection)
     var body = currentDescription + " · " + currentTemperature
-      + "\n" + tr("Wind") + " " + wind + (windDirection ? " " + windDirection : "")
-      + " · " + tr("Humidity") + " " + (current.humidity === null ? "—" : current.humidity + "%")
+      + "\n" + FoamyI18n.t("Wind") + " " + wind + (windDirection ? " " + windDirection : "")
+      + " · " + FoamyI18n.t("Humidity") + " " + (current.humidity === null ? "—" : FoamyI18n.number(current.humidity) + "%")
     // A failed reverse lookup can leave a coordinate pair as the location label.
-    var headlineLocation = configuredLocation || root.tr("selected location")
-    if (/^-?[0-9.]+,\s*-?[0-9.]+$/.test(headlineLocation)) headlineLocation = root.tr("selected location")
+    var headlineLocation = reportLocation
+    if (!headlineLocation || /^-?[0-9.]+,\s*-?[0-9.]+$/.test(headlineLocation)) headlineLocation = FoamyI18n.t("selected location")
     Quickshell.execDetached([
       "omarchy-notification-send", "-g", conditionIcon,
-      root.tr("Weather in ") + headlineLocation, body
+      FoamyI18n.t("Weather in %1", [headlineLocation]), body
     ])
+  }
+
+  function savePreference(key, value) {
+    if (saving) return
+    settingsError = ""
+    lastSave = { key: key, value: value }
+    var result = Prefs.save(root.bar, root.entryId, Preferences.fields, root.settings, key, value)
+    if (!result.ok) {
+      settingsError = result.error
+      return
+    }
+    if (key === "automaticLocation" && value === true) clearSearch()
+    if (result.command.length === 0) {
+      lastSave = null
+      return
+    }
+    saving = true
+    preferencesSaveProc.command = result.command
+    preferencesSaveProc.running = true
+  }
+
+  function retrySave() {
+    if (lastSave) savePreference(lastSave.key, lastSave.value)
   }
 
   function clearSearch() {
@@ -303,28 +196,41 @@ Panel {
     geocodeActiveQuery = ""
     locationSuggestions = []
     searchCompleted = false
+    searchText = ""
+    root.searchCleared()
   }
 
   function startEditingLocation() {
     editingLocation = true
     settingsError = ""
+    lastSave = null
     clearSearch()
-    if (locationField) locationField.text = ""
-    weatherScroll.contentY = 0
-    // Opening settings must not focus the field or query the geocoder.
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   function cancelEditingLocation() {
     editingLocation = false
     settingsError = ""
+    lastSave = null
     clearSearch()
-    weatherScroll.contentY = 0
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  // The search field's text changed by typing or paste.
+  function searchEdited(text) {
+    geocodeDebounce.stop()
+    geocodeProc.running = false
+    locationSuggestions = []
+    searchCompleted = false
+    settingsError = ""
+    searchText = String(text || "")
+    if (searchText.trim().length >= 2) geocodeDebounce.restart()
+  }
+
+  function moveSuggestion(delta) {
+    suggestionIndex = Math.max(0, Math.min(locationSuggestions.length - 1, suggestionIndex + delta))
   }
 
   function commitLocation() {
-    var location = Model.locationCommit(locationField.text, locationSuggestions, suggestionIndex)
+    var location = Model.locationCommit(searchText, locationSuggestions, suggestionIndex)
     if (location.latitude === null || location.longitude === null) {
       settingsError = "Choose a location from the search results"
       return
@@ -344,7 +250,7 @@ Panel {
 
   function requestGeocode() {
     if (!editingLocation || automaticLocation) return
-    var query = locationField.text.trim()
+    var query = searchText.trim()
     if (query.length < 2) {
       locationSuggestions = []
       return
@@ -353,92 +259,28 @@ Panel {
     if (!geocodeProc.running) startGeocode()
   }
 
+  function geocodeLanguage() {
+    var language = String(FoamyI18n.language || "en").toLowerCase()
+    if (language === "nb" || language === "nn") return "no"
+    return /^[a-z]{2}$/.test(language) ? language : "en"
+  }
+
   function startGeocode() {
     if (!editingLocation || automaticLocation || geocodePendingQuery.length < 2) return
     geocodeActiveQuery = geocodePendingQuery
-    geocodeProc.command = [
-      "curl", "-fsS", "--max-time", "5",
-      "https://geocoding-api.open-meteo.com/v1/search?name="
-        + encodeURIComponent(geocodeActiveQuery) + "&count=5&language=" + (root.language === "no" ? "no" : "en") + "&format=json"
-    ]
+    // The typed place goes to curl on stdin, not in its (procfs-visible) argv.
+    geocodeProc.requestInput = 'url = "https://geocoding-api.open-meteo.com/v1/search?name='
+      + encodeURIComponent(geocodeActiveQuery) + "&count=5&language=" + geocodeLanguage() + '&format=json"\n'
+    geocodeProc.stdinEnabled = true
     geocodeProc.running = true
   }
 
-  function dayLabel(day, index) {
-    if (!day) return ""
-    if (index === 0) return root.tr("Today")
-    if (index === 1) return root.tr("Tomorrow")
-    var label = Qt.locale(FoamyI18n.formatLocale).toString(day.dateObject, "dddd")
-    return label.charAt(0).toUpperCase() + label.slice(1)
-  }
-
-  function shortDate(day) {
-    return day ? Qt.locale(FoamyI18n.formatLocale).toString(day.dateObject, "d. MMM") : ""
-  }
-
-  function timeLabel(value) {
-    return Model.formatIsoTime(value) || "—"
-  }
-
-  FileView {
-    id: locationFile
-    path: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/omarchy/settings/weather.json"
-    watchChanges: true
-    printErrors: false
-    onFileChanged: reload()
-    onLoaded: root.storedLocationState = Model.parseLocationFile(text())
-    onLoadFailed: root.storedLocationState = Model.parseLocationFile("")
-  }
-
-  FileView {
-    id: localLocationFile
-    path: root.configRoot + "/weather-location.local.json"
-    watchChanges: true
-    printErrors: false
-    onFileChanged: reload()
-    onLoaded: root.localLocationState = Model.parseLocationFile(text())
-    onLoadFailed: root.localLocationState = Model.parseLocationFile("")
-  }
-
   Timer {
-    interval: 1500
-    running: true
-    onTriggered: locationFile.reload()
-  }
-
-  Timer {
+    // Ages and the hourly rows follow the clock only while someone looks.
     interval: 60 * 1000
-    running: true
+    running: root.opened
     repeat: true
     onTriggered: root.now = new Date()
-  }
-
-  Timer {
-    interval: root.refreshMinutes * 60 * 1000
-    // Start after the connection settles, including Limited connectivity on VPNs.
-    running: root.networkReady
-    repeat: true
-    triggeredOnStart: true
-    onTriggered: root.refresh(false)
-  }
-
-  Timer {
-    interval: root.locationRefreshMinutes * 60 * 1000
-    running: root.preferencesReady && root.networkReady && root.automaticLocation
-    repeat: true
-    triggeredOnStart: true
-    onTriggered: root.resolveLocation(false)
-  }
-
-  Timer {
-    id: retryTimer
-    interval: 2500
-    onTriggered: root.refresh(true)
-  }
-
-  Timer {
-    id: locationRetryTimer
-    onTriggered: root.resolveLocation(true)
   }
 
   Timer {
@@ -448,80 +290,21 @@ Panel {
   }
 
   Process {
-    id: weatherProc
+    id: geocodeProc
     property string requestInput: ""
+    command: ["curl", "-fsS", "--max-time", "5", "--config", "-"]
     onStarted: {
       write(requestInput)
       stdinEnabled = false
     }
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var raw = String(text || "").trim()
-        try {
-          var response = JSON.parse(raw || "{}")
-          if (response.error) {
-            root.errorMessage = String(response.error)
-            root.scheduleRetry()
-            return
-          }
-        } catch (e) {
-          root.errorMessage = "Could not read weather data"
-          root.scheduleRetry()
-          return
-        }
-
-        var parsed = Model.parseBundle(raw)
-        if (!parsed) {
-          root.errorMessage = "Invalid response from MET Norway"
-          root.scheduleRetry()
-          return
-        }
-        root.report = parsed
-        root.loading = false
-        root.errorMessage = parsed.stale ? "Showing last known weather" : ""
-        if (parsed.stale) root.scheduleRetry()
-        else root.retries = 0
-      }
-    }
-  }
-
-  Process {
-    id: locationProc
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var resolved = Model.parseResolvedLocation(text)
-        if (resolved.latitude === null || resolved.longitude === null) {
-          root.dynamicLocationError = resolved.error || "Could not read automatic location"
-          if (!root.hasCoordinates) root.errorMessage = root.dynamicLocationError
-          // Automatic location needs its own recovery; weather cannot load without it.
-          if (root.networkReady && root.automaticLocation && root.locationRetries < 3) {
-            locationRetryTimer.interval = 2500 * Math.pow(2, root.locationRetries++)
-            locationRetryTimer.restart()
-          }
-          return
-        }
-
-        root.dynamicLocationState = resolved
-        root.locationRetries = 0
-        locationRetryTimer.stop()
-        root.dynamicLocationError = ""
-        if (root.automaticLocation) root.errorMessage = ""
-      }
-    }
-  }
-
-  Process {
-    id: geocodeProc
     onExited: function(exitCode) {
-      if (exitCode !== 0 && root.editingLocation && root.geocodeActiveQuery === locationField.text.trim())
+      if (exitCode !== 0 && root.editingLocation && root.geocodeActiveQuery === root.searchText.trim())
         root.settingsError = "Could not search for a location"
     }
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        if (!root.editingLocation || root.automaticLocation || root.geocodeActiveQuery !== locationField.text.trim()) return
+        if (!root.editingLocation || root.automaticLocation || root.geocodeActiveQuery !== root.searchText.trim()) return
         try {
           var response = JSON.parse(text)
           if (response.error) throw new Error("Geocoder rejected query")
@@ -544,693 +327,54 @@ Panel {
       stdinEnabled = false
     }
     onExited: function(exitCode) {
+      root.savingLocation = false
       if (exitCode !== 0) {
-        root.savingLocation = false
         root.settingsError = "Could not save the location"
         return
       }
-      root.savingLocation = false
-      localLocationFile.reload()
+      WeatherService.reloadLocations()
       root.clearSearch()
-      if (locationField) locationField.text = ""
     }
-  }
-
-  FileView {
-    path: localPathFromUrl(Qt.resolvedUrl("manifest.json"))
-    onLoaded: {
-      try { root.widgetId = String(JSON.parse(text()).id || "") }
-      catch (error) { root.settingsError = "Could not read settings" }
-    }
-    onLoadFailed: root.settingsError = "Could not read settings"
   }
 
   Process {
     id: preferencesSaveProc
     onExited: function(exitCode) {
+      root.saving = false
       if (exitCode !== 0) {
         root.settingsError = "Could not save settings"
         return
       }
-      if (root.automaticLocation) root.clearSearch()
+      root.lastSave = null
     }
   }
 
-  IpcHandler {
-    target: root.ipcTarget
+  FoamyIpc {
+    target: "foamy.weather"
+    enabled: member.isLeader
 
     function open(): void { root.openFromHotkey() }
     function close(): void { root.close() }
     function show(): void { root.openFromHotkey() }
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
-    function edit(): void { root.startEditingLocation(); root.openFromHotkey() }
+    // Open first: the settings page is built with the popup body.
+    function edit(): void { root.openFromHotkey(); root.startEditingLocation() }
     function refresh(): void { root.refresh(true) }
   }
 
-  component Label: Text {
-    textFormat: Text.PlainText
-    color: root.foreground
-    font.family: root.fontFamily
-    font.pixelSize: Style.space(13)
-  }
-
-  WeatherPopup {
-    id: panel
+  FoamyPopup {
+    id: popup
     anchorItem: root.anchorItem
     owner: root.barIdentity
     bar: root.bar
     open: root.opened
-    centerOnBar: true
-    focusTarget: keyCatcher
-    padding: 0
-    borderSpec: Border.flat(root.outlineColor, 1)
-    contentWidth: panel.fittedContentWidth(Style.space(600))
-    contentHeight: panel.fittedContentHeight(weatherColumn.implicitHeight)
-
-    PanelKeyCatcher {
-      id: keyCatcher
-      anchors.fill: parent
-      blocked: root.editingLocation
-      onReturnRequested: root.startEditingLocation()
-      Keys.onEscapePressed: root.editingLocation ? root.cancelEditingLocation() : root.close()
-      Keys.onTabPressed: function(event) {
-        if (root.editingLocation && keyCatcher.activeFocus) automaticLocationToggle.forceActiveFocus()
-        else event.accepted = false
-      }
-      onMoveRequested: function(dx, dy) {
-        if (dx !== 0 && root.forecastDays.length > 0)
-          root.selectedDayIndex = Math.max(0, Math.min(root.forecastDays.length - 1, root.selectedDayIndex + dx))
-      }
-      onCloseRequested: root.editingLocation ? root.cancelEditingLocation() : root.close()
-      onTabRequested: function(direction) { root.switchPanel(direction) }
-
-      Flickable {
-        id: weatherScroll
-        anchors.fill: parent
-        contentWidth: width
-        contentHeight: weatherColumn.implicitHeight
-        clip: true
-        boundsBehavior: Flickable.StopAtBounds
-        interactive: contentHeight > height
-
-        Column {
-          id: weatherColumn
-          width: parent.width
-
-          Item {
-            id: weatherHero
-            width: parent.width
-            height: Style.space(200)
-            // Keep the theme background available before weather data or shader readiness.
-            Canvas {
-              id: headerBackground
-              readonly property real cornerRadius: Math.max(0, Math.min(width / 2, height, panel.cornerRadius - Border.top(panel.borderSpec)))
-              onCornerRadiusChanged: requestPaint()
-              anchors.fill: parent
-              onWidthChanged: requestPaint()
-              onHeightChanged: requestPaint()
-              onPaint: {
-                var ctx = getContext("2d")
-                ctx.reset()
-                var radius = cornerRadius
-                ctx.beginPath()
-                ctx.moveTo(radius, 0); ctx.lineTo(width - radius, 0)
-                ctx.arcTo(width, 0, width, radius, radius)
-                ctx.lineTo(width, height); ctx.lineTo(0, height); ctx.lineTo(0, radius)
-                ctx.arcTo(0, 0, radius, 0, radius); ctx.closePath(); ctx.clip()
-                var gradient = ctx.createLinearGradient(0, 0, width * 0.5, height)
-                gradient.addColorStop(0, Qt.tint(Color.popups.background, Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.08)))
-                gradient.addColorStop(1, Color.popups.background)
-                ctx.fillStyle = gradient; ctx.fillRect(0, 0, width, height)
-                var glow = ctx.createRadialGradient(width * 0.9, 0, 0, width * 0.9, 0, width * 0.85)
-                glow.addColorStop(0, Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.17))
-                glow.addColorStop(1, "transparent")
-                ctx.fillStyle = glow; ctx.fillRect(0, 0, width, height)
-              }
-              Connections { target: Color; function onAccentChanged() { headerBackground.requestPaint() } function onShellValuesChanged() { headerBackground.requestPaint() } function onBackgroundChanged() { headerBackground.requestPaint() } }
-            }
-
-            WeatherBackground {
-              anchors.fill: parent
-              current: root.current
-              now: root.now
-              location: root.configuredLocationState
-              visible: root.preferences.animations
-              active: root.preferences.animations && root.opened && weatherHero.y + weatherHero.height > weatherScroll.contentY
-              surfaceColor: Color.popups.background
-              lightTheme: root.lightTheme
-              cornerRadius: Math.max(0, panel.cornerRadius - Border.top(panel.borderSpec))
-            }
-
-            Column {
-              anchors.centerIn: parent
-              width: parent.width - Style.space(40)
-              spacing: Style.space(8)
-              // Shade the text and icons instead of hiding the sky behind them.
-              layer.enabled: true
-              layer.effect: MultiEffect {
-                shadowEnabled: true
-                shadowColor: Color.popups.background
-                shadowOpacity: 0.9
-                shadowBlur: 0.25
-                blurMax: 8
-                shadowHorizontalOffset: 0
-                shadowVerticalOffset: 1
-              }
-              Label {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: root.configuredLocation || root.tr("Choose location")
-                width: Math.min(implicitWidth, weatherHero.width - Style.space(120))
-                height: Style.space(28)
-                verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
-                font.pixelSize: Style.space(14)
-              }
-              Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                height: Style.space(68)
-                spacing: Style.space(4)
-                Label { text: root.currentTemperature.replace("°", ""); font.pixelSize: Style.space(60); height: parent.height; verticalAlignment: Text.AlignVCenter }
-                Label { text: root.current ? (root.units === "imperial" ? "°F" : "°C") : ""; font.pixelSize: Style.space(19); topPadding: Style.space(6) }
-              }
-              Column {
-                width: parent.width
-                spacing: Style.space(4)
-                Row {
-                  anchors.horizontalCenter: parent.horizontalCenter
-                  spacing: Style.space(5)
-                  WeatherConditionIcon {
-                    width: Style.space(28); height: width
-                    symbol: root.current ? root.current.symbol : "cloudy"
-                    lightTheme: root.lightTheme
-                    anchors.verticalCenter: parent.verticalCenter
-                  }
-                  Label {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: root.currentDescription
-                    font.pixelSize: Style.space(18)
-                    width: Math.min(implicitWidth, weatherHero.width - Style.space(80))
-                    elide: Text.ElideRight
-                  }
-                }
-                Label {
-                  width: parent.width; horizontalAlignment: Text.AlignHCenter
-                  visible: root.forecastDays.length > 0
-                  text: root.forecastDays.length ? root.tr("High ") + root.temperature(root.forecastDays[0].high) + root.tr(" · Low ") + root.temperature(root.forecastDays[0].low) : ""
-                  color: root.secondaryForeground; font.pixelSize: Style.space(12)
-                }
-                Label {
-                  width: parent.width; horizontalAlignment: Text.AlignHCenter
-                  visible: !root.current
-                  text: root.loading ? root.tr("Loading weather…") : root.tr("Waiting for weather")
-                  color: root.secondaryForeground; font.pixelSize: Style.space(12)
-                }
-              }
-            }
-            WeatherAction {
-              visible: !root.editingLocation
-              anchors.top: parent.top
-              anchors.right: parent.right
-              anchors.topMargin: Style.space(13)
-              anchors.rightMargin: Style.space(16)
-              implicitWidth: Style.space(32)
-              implicitHeight: Style.space(32)
-              radius: Style.cornerRadius * 2
-              iconSize: Style.space(16)
-              iconName: "settings"
-              tooltipText: root.tr("Settings")
-              foreground: root.secondaryForeground
-              keyTarget: keyCatcher
-              enabled: !root.savingLocation
-              onClicked: root.editingLocation ? root.cancelEditingLocation() : root.startEditingLocation()
-            }
-          }
-
-          Item {
-            width: parent.width
-            height: body.implicitHeight + Style.space(28)
-            Column {
-              id: body
-              x: Style.space(20); y: Style.space(16)
-              width: parent.width - Style.space(40)
-              spacing: 0
-
-          Loader {
-            id: locationSettings
-
-            width: parent.width
-            anchors.horizontalCenter: parent.horizontalCenter
-            active: root.settingsContentActive
-            visible: root.editingLocation
-
-            sourceComponent: Component {
-              Column {
-                property alias locationField: locationField
-                property alias automaticLocationToggle: automaticLocationToggle
-
-                visible: root.editingLocation
-                width: parent.width
-                spacing: Style.space(12)
-
-                Row {
-                  width: parent.width
-                  spacing: Style.space(10)
-
-                  WeatherAction {
-                    id: settingsBack
-
-                    iconName: "arrow-left"
-                    tooltipText: root.tr("Back")
-                    foreground: root.secondaryForeground
-                    onClicked: root.cancelEditingLocation()
-                  }
-
-                  Label {
-                    text: root.tr("Settings")
-                    color: root.secondaryForeground
-                    anchors.verticalCenter: parent.verticalCenter
-                  }
-
-                }
-
-                Toggle {
-                  id: automaticLocationToggle
-
-                  property bool showHint: false
-
-                  fontFamily: root.fontFamily
-                  titleSize: Style.space(13)
-                  implicitHeight: Style.space(36)
-                  borderSpec: activeFocus ? Border.flat(Color.accent, 1) : Border.none()
-                  color: "transparent"
-                  width: parent.width
-                  label: root.tr("Use location data")
-                  onHovered: function(hovered) {
-                    showHint = hovered;
-                  }
-                  checked: root.automaticLocation
-                  enabled: !preferencesSaveProc.running && !root.savingLocation
-                  onClicked: root.savePreference("automaticLocation", !root.automaticLocation)
-
-                  PanelToolTip {
-                    visible: automaticLocationToggle.showHint || automaticLocationToggle.activeFocus
-                    text: root.tr("Automatic via GeoClue. Your location is used by MET Norway and OpenStreetMap.")
-                    fontFamily: root.fontFamily
-                  }
-
-                }
-
-                Label {
-                  visible: root.automaticLocation && (locationProc.running || root.dynamicLocationError !== "")
-                  width: parent.width
-                  wrapMode: Text.WordWrap
-                  text: locationProc.running ? root.tr("Finding location…") : root.tr(root.dynamicLocationError)
-                  color: root.secondaryForeground
-                  font.pixelSize: Style.space(12)
-                }
-
-                Column {
-                  visible: !root.automaticLocation
-                  width: parent.width
-                  spacing: Style.spacing.labelGap
-
-                  Label {
-                    text: root.tr("Location")
-                    color: Qt.darker(Color.popups.text, 1.4)
-                    font.pixelSize: Style.font.caption
-                    font.bold: true
-                  }
-
-                  SafeTextField {
-                    id: locationField
-                    objectName: "weatherLocationField"
-
-                    width: parent.width
-                    enabled: !root.savingLocation
-                    Accessible.name: root.tr("Location")
-                    placeholderText: root.tr("Search for a location")
-                    foreground: root.foreground
-                    font.family: root.fontFamily
-                    onTextEdited: {
-                      root.clearSearch();
-                      root.settingsError = "";
-                      if (text.trim().length >= 2)
-                        geocodeDebounce.restart();
-
-                    }
-                    onPasteErrorChanged: if (pasteError) root.settingsError = pasteError
-                    translate: root.tr
-                    onKeyPressed: function(event) {
-                      if (event.key === Qt.Key_Escape) {
-                        root.cancelEditingLocation();
-                        event.accepted = true;
-                      } else if (event.key === Qt.Key_Down) {
-                        if (root.suggestionIndex < root.locationSuggestions.length - 1)
-                          root.suggestionIndex++;
-
-                        event.accepted = true;
-                      } else if (event.key === Qt.Key_Up) {
-                        if (root.suggestionIndex > 0)
-                          root.suggestionIndex--;
-
-                        event.accepted = true;
-                      } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                        root.commitLocation();
-                        event.accepted = true;
-                      }
-                    }
-
-                    Binding {
-                      target: locationField.background
-                      property: "radius"
-                      value: Style.cornerRadius * 2
-                    }
-
-                  }
-
-                }
-
-                Repeater {
-                  model: root.locationSuggestions
-
-                  Rectangle {
-                    required property var modelData
-                    required property int index
-
-                    width: parent.width
-                    height: suggestionText.implicitHeight + Style.space(12)
-                    radius: Style.cornerRadius * 2
-                    color: index === root.suggestionIndex ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent"
-
-                    Text {
-                      id: suggestionText
-
-                      textFormat: Text.PlainText
-                      anchors.left: parent.left
-                      anchors.leftMargin: Style.space(12)
-                      anchors.verticalCenter: parent.verticalCenter
-                      text: modelData.name + (modelData.description ? "  ·  " + modelData.description : "")
-                      color: root.foreground
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.body
-                      width: parent.width - Style.space(24)
-                      wrapMode: Text.WordWrap
-                    }
-
-                    MouseArea {
-                      anchors.fill: parent
-                      hoverEnabled: true
-                      cursorShape: Qt.PointingHandCursor
-                      onPositionChanged: root.suggestionIndex = index
-                      onClicked: root.pickSuggestion(modelData)
-                    }
-
-                  }
-
-                }
-
-                Label {
-                  visible: !root.automaticLocation && (geocodeProc.running || root.searchCompleted && !root.locationSuggestions.length)
-                  text: geocodeProc.running ? root.tr("Searching…") : root.tr("No locations found")
-                  color: root.secondaryForeground
-                }
-
-                Label {
-                  visible: root.settingsError !== ""
-                  width: parent.width
-                  wrapMode: Text.WordWrap
-                  text: root.tr(root.settingsError)
-                  color: root.urgent
-                }
-
-                Grid {
-                  id: preferenceGrid
-
-                  width: parent.width
-                  columns: width < Style.space(420) ? 1 : 2
-                  spacing: Style.space(12)
-
-
-                  WeatherDropdown {
-                    id: unitsDropdown
-
-                    fontFamily: root.fontFamily
-                    width: (preferenceGrid.width - preferenceGrid.spacing * (preferenceGrid.columns - 1)) / preferenceGrid.columns
-                    label: root.tr("Units")
-                    value: root.units
-                    options: [{
-                      "value": "metric",
-                      "label": root.tr("Metric (°C, km/h, mm)")
-                    }, {
-                      "value": "imperial",
-                      "label": root.tr("Imperial (°F, mph, in)")
-                    }]
-                    enabled: !preferencesSaveProc.running
-                    onChanged: function(value) {
-                      root.savePreference("units", value);
-                    }
-                  }
-
-                }
-
-                Toggle {
-                  id: animationToggle
-
-                  fontFamily: root.fontFamily
-                  titleSize: Style.space(13)
-                  implicitHeight: Style.space(36)
-                  borderSpec: activeFocus ? Border.flat(Color.accent, 1) : Border.none()
-                  color: "transparent"
-                  width: parent.width
-                  label: root.tr("Animated background")
-                  checked: root.preferences.animations
-                  enabled: !preferencesSaveProc.running
-                  onClicked: root.savePreference("animations", !root.preferences.animations)
-                }
-
-              }
-
-            }
-
-          }
-
-          Rectangle {
-            visible: !root.editingLocation && root.errorMessage !== ""
-            width: parent.width
-            height: errorRow.implicitHeight + Style.space(14)
-            radius: Style.cornerRadius * 2
-            color: Style.hoverFillFor(root.foreground, root.report && root.report.stale ? Color.accent : root.urgent)
-
-            Row {
-              id: errorRow
-              anchors.left: parent.left
-              anchors.leftMargin: Style.space(12)
-              anchors.verticalCenter: parent.verticalCenter
-              spacing: Style.space(8)
-
-              Text {
-                textFormat: Text.PlainText
-                text: root.report && root.report.stale ? "󰋚" : "󰅚"
-                color: root.report && root.report.stale ? Color.accent : root.urgent
-                font.family: root.iconFontFamily
-                font.pixelSize: Style.font.body
-              }
-              Text {
-                textFormat: Text.PlainText
-                text: root.tr(root.errorMessage)
-                width: Math.max(0, body.width - Style.space(50))
-                wrapMode: Text.WordWrap
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-              }
-            }
-          }
-
-
-
-              Column {
-                id: forecastContent
-                width: parent.width
-                visible: !root.editingLocation
-              Item { width: 1; height: Style.space(18); visible: root.errorMessage !== "" }
-
-              Grid {
-                id: metricGrid
-                visible: !!root.current
-                width: parent.width
-                columns: width < Style.space(380) ? 2 : 4
-                rowSpacing: Style.space(15)
-                Repeater {
-                  model: [
-                    { label: root.tr("Wind"), icon: "wind", value: root.current ? root.windSpeed(root.current.windSpeed) : "—", detail: root.current ? root.windLabel(root.current.windDirection) : "" },
-                    { label: root.tr("Humidity"), icon: "droplets", value: root.current && root.current.humidity !== null ? root.current.humidity + " %" : "—", detail: root.tr("Relative") },
-                    { label: root.tr("Next hour"), icon: "cloud-rain", value: root.current ? root.precipitation(root.current.precipitation) : "—", detail: root.tr("Precipitation") },
-                    { label: root.tr("UV index"), icon: "sun", value: root.current ? Model.uvIndex(root.current.uvIndex) : "—", detail: root.uvLabel }
-                  ]
-                  Item {
-                    required property var modelData
-                    required property int index
-                    width: metricGrid.width / metricGrid.columns
-                    height: Style.space(64)
-                    Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: root.outlineColor; visible: index % metricGrid.columns < metricGrid.columns - 1 }
-                    Column {
-                      width: parent.width
-                      anchors.verticalCenter: parent.verticalCenter
-                      spacing: Style.space(6)
-                      Row {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        spacing: Style.space(5)
-                        WeatherIcon { anchors.verticalCenter: parent.verticalCenter; width: Style.space(14); height: width; name: modelData.icon; color: root.secondaryForeground }
-                        Label { anchors.verticalCenter: parent.verticalCenter; text: modelData.label; color: root.secondaryForeground; font.pixelSize: Style.space(11); font.letterSpacing: 0.6 }
-                      }
-                      Label { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.value; font.pixelSize: Style.space(19) }
-                      Label { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.detail; color: root.secondaryForeground; font.pixelSize: Style.space(11) }
-                    }
-                  }
-                }
-              }
-
-              Item { width: 1; height: Style.space(16); visible: root.forecastDays.length > 0 }
-              Label { text: root.tr("Three-day forecast"); visible: root.forecastDays.length > 0 }
-              Item { width: 1; height: Style.space(11); visible: root.forecastDays.length > 0 }
-              Grid {
-                id: forecastGrid
-                visible: root.forecastDays.length > 0
-                width: parent.width
-                columns: width < Style.space(420) ? 1 : Math.max(1, root.forecastDays.length)
-                spacing: Style.space(10)
-                Repeater {
-                  model: root.forecastDays
-                  Rectangle {
-                    id: dayCard
-                    required property var modelData
-                    required property int index
-                    width: (forecastGrid.width - forecastGrid.spacing * (forecastGrid.columns - 1)) / forecastGrid.columns
-                    height: Style.space(100)
-                    radius: Style.cornerRadius * 2
-                    color: index === root.selectedDayIndex ? root.selectedCardColor : root.cardColor
-                    clip: true
-                    Item {
-                      anchors.bottom: parent.bottom
-                      width: parent.width
-                      height: Math.max(Style.space(2), Math.min(dayCard.radius, dayCard.width / 2, dayCard.height / 2))
-                      visible: dayCard.index === root.selectedDayIndex
-                      clip: true
-                      // Two offset rounded fills reproduce an inset bottom shadow,
-                      // tapering to nothing at the sides instead of curling upward.
-                      Rectangle {
-                        anchors.bottom: parent.bottom
-                        width: dayCard.width
-                        height: dayCard.height
-                        radius: dayCard.radius
-                        color: Color.accent
-                        antialiasing: true
-                        Rectangle {
-                          anchors.fill: parent
-                          anchors.bottomMargin: Style.space(2)
-                          radius: dayCard.radius
-                          color: dayCard.color
-                          antialiasing: true
-                        }
-                      }
-                    }
-                    Column {
-                      anchors.fill: parent; anchors.margins: Style.space(10)
-                      spacing: Style.space(5)
-                      Row {
-                        width: parent.width
-                        Label { text: root.dayLabel(modelData, index) }
-                        Item { width: Math.max(0, parent.width - parent.children[0].implicitWidth - parent.children[2].implicitWidth); height: 1 }
-                        Label { text: root.shortDate(modelData); color: root.secondaryForeground; font.pixelSize: Style.space(11) }
-                      }
-                      Row {
-                        spacing: Style.space(9)
-                        WeatherConditionIcon { width: Style.space(36); height: width; symbol: modelData.symbol; lightTheme: root.lightTheme; anchors.verticalCenter: parent.verticalCenter }
-                        Label { text: root.temperature(modelData.high); font.pixelSize: Style.space(21); anchors.verticalCenter: parent.verticalCenter }
-                        Label { text: root.temperature(modelData.low); color: root.secondaryForeground; anchors.verticalCenter: parent.verticalCenter }
-                      }
-                      Row {
-                        spacing: Style.space(6)
-                        WeatherIcon { width: Style.space(13); height: width; name: "droplet"; color: root.secondaryForeground; anchors.verticalCenter: parent.verticalCenter }
-                        Label { text: root.precipitation(modelData.precipitation) + " · " + root.timeLabel(modelData.sunset); color: root.secondaryForeground; font.pixelSize: Style.space(11) }
-                      }
-                    }
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selectedDayIndex = index }
-                  }
-                }
-              }
-
-              Item { width: 1; height: Style.space(16); visible: root.displayHours.length > 0 }
-              Row {
-                width: parent.width
-                visible: root.displayHours.length > 0
-                Label { text: root.tr("Hourly forecast") }
-                Item { width: Math.max(0, parent.width - parent.children[0].implicitWidth - parent.children[2].implicitWidth); height: 1 }
-                Label { text: root.selectedDay ? root.dayLabel(root.selectedDay, root.selectedDayIndex) + " · " + root.hourSummary : ""; color: root.secondaryForeground; font.pixelSize: Style.space(11) }
-              }
-              Item { width: 1; height: Style.space(11); visible: root.displayHours.length > 0 }
-              Grid {
-                id: hourlyGrid
-                width: parent.width
-                visible: root.displayHours.length > 0
-                columns: width < Style.space(480) ? 4 : 8
-                Repeater {
-                  model: root.displayHours
-                  Item {
-                    required property var modelData
-                    width: hourlyGrid.width / hourlyGrid.columns
-                    height: Style.space(110)
-                    Column {
-                      anchors.verticalCenter: parent.verticalCenter; width: parent.width
-                      spacing: Style.space(5)
-                      Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: modelData.time; color: root.secondaryForeground; font.pixelSize: Style.space(11) }
-                      WeatherConditionIcon { anchors.horizontalCenter: parent.horizontalCenter; width: Style.space(34); height: width; symbol: modelData.symbol; lightTheme: root.lightTheme }
-                      Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.temperature(modelData.temperature) }
-                      Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.precipitation(modelData.precipitation); color: root.rainColor; font.pixelSize: Style.space(11) }
-                    }
-                  }
-                }
-              }
-
-              Item { width: 1; height: Style.space(12) }
-              Rectangle { width: parent.width; height: 1; color: root.outlineColor }
-              Item { width: 1; height: Style.space(10) }
-              Row {
-                id: footer
-                width: parent.width
-                Label { id: providerLabel; anchors.verticalCenter: parent.verticalCenter; text: "MET Norway"; color: root.secondaryForeground; font.pixelSize: Style.space(11) }
-                Item { width: Math.max(0, footer.width - providerLabel.width - footerActions.implicitWidth); height: 1 }
-                Row {
-                  id: footerActions
-                  spacing: Style.space(12)
-                  Label {
-                    visible: root.updatedText !== ""
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, Math.max(0, footer.width - providerLabel.width - refreshButton.width - Style.space(24)))
-                    text: root.tr("Updated ") + root.updatedText
-                    elide: Text.ElideRight
-                    color: root.secondaryForeground
-                    opacity: 0.8
-                    font.pixelSize: Style.space(11)
-                  }
-                  WeatherAction {
-                    id: refreshButton
-                    iconName: "refresh-cw"
-                    width: Style.space(26); height: Style.space(26)
-                    tooltipText: root.loading ? root.tr("Refreshing…") : (!root.networkReady ? root.tr("Waiting for network…") : root.tr("Refresh"))
-                    spinning: root.opened && root.loading
-                    foreground: root.secondaryForeground
-                    enabled: !root.loading && root.networkReady
-                    onClicked: root.refresh(true)
-                  }
-                }
-              }
-              }
-            }
-          }
-        }
+    wide: true
+    // Follow the widget like 4.5's weather panel instead of the bar centre.
+    centerOnBar: false
+    body: Component {
+      WeatherView {
+        controller: root
       }
     }
   }

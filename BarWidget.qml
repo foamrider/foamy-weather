@@ -27,6 +27,8 @@ BarWidget {
     if (panelLoader.item && panelLoader.item.notifySummary) panelLoader.item.notifySummary()
   }
 
+  // The per-bar Panel (popup, settings); the weather data lives in WeatherService.
+  readonly property var panel: panelLoader.item
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
   function open() {

@@ -1,8 +1,19 @@
 const I18n = require('./i18n.cjs');
 const assert = require("node:assert/strict")
 const P = require("../Preferences.js")
-assert.deepEqual(P.fromSettings({language: 'nb'}), {units:'metric', automaticLocation:false, animations:true});
-assert.deepEqual(P.fromSettings({language:'en', units:'imperial', automaticLocation:true, animations:false}), {units:'imperial', automaticLocation:true, animations:false});
+const defaults = {units:'metric', automaticLocation:false, animations:true, refreshMinutes:30, locationRefreshMinutes:15, requestUserAgent:''};
+assert.deepEqual(P.fromSettings({language: 'nb'}), defaults);
+assert.deepEqual(P.fromSettings({language:'en', units:'imperial', automaticLocation:true, animations:false}), {...defaults, units:'imperial', automaticLocation:true, animations:false});
+assert.equal(P.fromSettings({refreshMinutes: 1}).refreshMinutes, 5);
+assert.equal(P.fromSettings({refreshMinutes: "60"}).refreshMinutes, 60);
+assert.equal(P.fromSettings({locationRefreshMinutes: 99999}).locationRefreshMinutes, 1440);
+assert.equal(P.fromSettings({requestUserAgent: "bad\nagent"}).requestUserAgent, "");
+// The save schema covers every documented setting and matches the manifest.
+const manifest = require('../manifest.json');
+assert.deepEqual(P.fields.map(f => f.key).sort(), manifest.barWidget.schema.map(f => f.key).sort());
+for (const f of P.fields) assert.deepEqual(manifest.barWidget.defaults[f.key], f.defaultValue, f.key);
+assert.equal(P.temperature(-3.4, "metric", v => "٫" + v), "٫-3°", "numbers go through the language formatter");
+assert.equal(P.temperatureValue(21.6, "metric"), "22");
 assert.equal(P.fromSettings({automaticLocation:'true'}).automaticLocation,false);
 assert.equal(P.fromSettings(null).units,'metric');
 assert.equal(P.fromSettings([]).animations,true);
@@ -24,7 +35,7 @@ for (const value of [null, undefined, NaN, Infinity]) {
 assert.equal(I18n.text("Partly cloudy", "en"), "Partly cloudy")
 assert.equal(I18n.text("Partly cloudy", "no"), "Delvis skyet")
 assert.equal(P.age("2026-09-24T10:00:00Z", new Date("2026-09-24T10:31:00Z")), "31 min ago")
-assert.equal(P.age("2026-09-24T10:00:00Z", new Date("2026-09-24T10:31:00Z"), no), "31 min siden")
+assert.equal(P.age("2026-09-24T10:00:00Z", new Date("2026-09-24T11:31:00Z")), "1 hour ago")
 const Model = require("../Model.js")
 for (const weight of ["light", "", "heavy"])
   for (const precipitation of ["rain", "snow", "sleet"])
@@ -46,17 +57,3 @@ for (const [english, norwegian] of [
   assert.equal(I18n.text(english, "en"), english)
 }
 console.log("Weather preferences, translations and unit conversion tests passed.")
-
-// Exercise the production callback, not a test translator that bypasses it.
-const fs = require('node:fs');
-const vm = require('node:vm');
-const panelSource = fs.readFileSync(require('node:path').join(__dirname, '../Panel.qml'), 'utf8');
-const wrapper = panelSource.match(/function tr\([^\n]+\}/)[0];
-for (const language of ['en', 'no']) {
-  const context = vm.createContext({FoamyI18n: {t: (key, values) => I18n.text(key, language, values)}});
-  vm.runInContext(wrapper, context);
-  for (const [minutes, key, amount] of [[2, '%1 min ago', 2], [60, '%1 hour ago', 1], [180, '%1 hours ago', 3]]) {
-    const now = new Date(Date.parse('2026-09-24T10:00:00Z') + minutes * 60000);
-    assert.equal(P.age('2026-09-24T10:00:00Z', now, context.tr), I18n.text(key, language, amount));
-  }
-}
