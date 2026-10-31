@@ -80,14 +80,18 @@ esac
     def test_automatic_location_and_forecast_keep_coordinates_out_of_procfs(self):
         # The no-name response forces the coordinate-label fallback through jq too.
         location = json.loads(self.run_script('weather-resolve-location.sh', ['--force']).stdout)
-        self.assertEqual(location['latitude'], float(LATITUDE))
-        self.assertEqual(location['longitude'], float(LONGITUDE))
+        # Automatic positions are rounded to about 1 km before anything uses them.
+        self.assertEqual(location['latitude'], 12.35)
+        self.assertEqual(location['longitude'], -56.79)
         self.assertEqual(location['name'], '12.35, -56.79')
         report = json.loads(self.run_script('weather-fetch.sh', ['--force'],
                                            LATITUDE + '\n' + LONGITUDE + '\n').stdout)
         self.assertFalse(report['stale'])
         self.assertEqual(len(report['sun']), 3)
-        self.assertIn('lat=' + LATITUDE + '&lon=' + LONGITUDE, self.urls.read_text())
+        # MET gets three decimals (about 100 m), Nominatim the rounded position.
+        self.assertIn('lat=12.346&lon=-56.789', self.urls.read_text())
+        self.assertIn('reverse?format=jsonv2&lat=12.35&lon=-56.79&', self.urls.read_text())
+        self.assertNotIn('12.3456', self.urls.read_text())
         self.assert_private()
         for root in [self.base / 'cache/omarchy-weather', self.base / 'runtime']:
             self.assertEqual(stat.S_IMODE(root.stat().st_mode), 0o700)
@@ -113,7 +117,8 @@ esac
         report = json.loads(self.run_script('weather-fetch.sh', ['--force'],
                                            LATITUDE + '\n' + LONGITUDE + '\n').stdout)
         self.assertTrue(report['stale'])
-        key = hashlib.sha256((LATITUDE + '_' + LONGITUDE).encode()).hexdigest()
+        # Migrated into the opaque name of the three-decimal request key.
+        key = hashlib.sha256(b'12.346_-56.789').hexdigest()
         migrated = cache / ('forecast-complete-' + key + '.json')
         self.assertEqual(migrated.stat().st_mtime, old_time)
         self.assertEqual(json.loads(migrated.read_text()), json.loads(FORECAST))
@@ -142,9 +147,10 @@ esac
             self.assertFalse(self.urls.exists())
 
     def test_quickshell_sends_fresh_stdin_on_repeated_fetch_and_location_save(self):
-        qml = (ROOT / 'Panel.qml').read_text()
+        service = (ROOT / 'WeatherService.qml').read_text()
+        panel = (ROOT / 'Panel.qml').read_text()
 
-        def block(marker, start=0):
+        def block(marker, start=0, qml=service):
             begin = qml.index(marker, start)
             end = qml.index('{', begin) + 1
             depth = 1
@@ -154,8 +160,8 @@ esac
             return qml[begin:end]
 
         # Use the production launch functions and write handlers, with real helpers.
-        weather_started = block('onStarted:', qml.index('id: weatherProc'))
-        save_started = block('onStarted:', qml.index('id: locationSaveProc'))
+        weather_started = block('onStarted:', service.index('weatherProc: Process {'))
+        save_started = block('onStarted:', panel.index('id: locationSaveProc'), panel)
         app = self.base / 'app'
         app.mkdir()
         (app / 'shell.qml').write_text('''import QtQuick
@@ -169,6 +175,11 @@ ShellRoot {
   property bool savingLocation: false
   property bool loading: false
   property string errorMessage: ""
+  property var errorValues: []
+  property int weatherGeneration: 0
+  property bool weatherRestart: false
+  property string configuredLocation: "Private Place"
+  property string coordinateQuery: "private"
   property string requestUserAgent: ""
   property var now
   property var configuredLocationState: ({latitude:12.3456,longitude:-56.7890})
@@ -177,10 +188,13 @@ ShellRoot {
   property int step: 0
   property string fetchScript: ''' + json.dumps(str(ROOT / 'scripts/weather-fetch.sh')) + '''
   property string locationScript: ''' + json.dumps(str(ROOT / 'scripts/weather-location.sh')) + '\n' +
-            block('function refresh(') + '\n' + block('function pickSuggestion(') + '''
+            block('function setError(') + '\n' + block('function refresh(') + '\n' + block('function pickSuggestion(', 0, panel) + '''
   Process {
     id: weatherProc
     property string requestInput: ""
+    property int generation: 0
+    property string query: ""
+    property string locationName: ""
     ''' + weather_started + '''
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.report = JSON.parse(text) }
   }
@@ -217,7 +231,7 @@ ShellRoot {
         result = subprocess.run(['dbus-run-session', '--', '/usr/bin/qs', '-p', str(app), '--no-color'],
                                 env=env, text=True, capture_output=True, timeout=15, check=True)
         self.assertIn('PRIVATE PIPE PASS', result.stdout + result.stderr)
-        self.assertIn('lat=8.7654&lon=9.8765', self.urls.read_text())
+        self.assertIn('lat=8.765&lon=9.87', self.urls.read_text())
         saved = json.loads((self.base / 'config/omarchy/weather-location.local.json').read_text())
         self.assertEqual(saved, {'name': 'Pipe Town', 'latitude': 8.7654, 'longitude': 9.8765})
         self.assert_private()

@@ -25,7 +25,7 @@ function parseLocationFile(raw) {
 }
 
 function parseResolvedLocation(raw) {
-  var unset = { name: "", latitude: null, longitude: null, source: "", error: "" }
+  var unset = { name: "", latitude: null, longitude: null, source: "", error: "", errorValues: [] }
   try {
     var data = JSON.parse(String(raw || ""))
     if (!data || typeof data !== "object") return unset
@@ -36,7 +36,9 @@ function parseResolvedLocation(raw) {
       latitude: location.latitude,
       longitude: location.longitude,
       source: typeof data.source === "string" ? trimmed(data.source) : "",
-      error: typeof data.error === "string" ? trimmed(data.error) : ""
+      error: typeof data.error === "string" ? trimmed(data.error) : "",
+      // %n values for the error key (a missing program's name, …).
+      errorValues: Array.isArray(data.values) ? data.values.map(String) : []
     }
   } catch (e) {
     return unset
@@ -98,26 +100,12 @@ function round(value, digits) {
   return Math.round(number * scale) / scale
 }
 
-function roundedText(value, digits) {
-  var number = round(value, digits)
-  return number === null ? "—" : String(number)
-}
-
-function temperature(value) {
-  var number = round(value, 0)
-  return number === null ? "—" : number + "°"
-}
-
-function precipitation(value) {
-  var number = round(value, 1)
-  if (number === null) return "—"
-  return number.toFixed(number % 1 === 0 ? 0 : 1) + " mm"
-}
-
-function uvIndex(value) {
-  var number = round(value, 1)
-  if (number === null) return "—"
-  return number.toFixed(number % 1 === 0 ? 0 : 1)
+// `number` is FoamyI18n.number (digits for the display language).
+function uvIndex(value, number) {
+  var rounded = round(value, 1)
+  if (rounded === null) return "—"
+  var decimals = rounded % 1 === 0 ? 0 : 1
+  return typeof number === "function" ? number(rounded, decimals) : rounded.toFixed(decimals)
 }
 
 function localDateKey(date) {
@@ -339,16 +327,16 @@ function iconForSymbol(symbol) {
   var raw = String(symbol || "cloudy")
   var code = normalizedSymbol(raw)
   var night = /_night$/.test(raw)
-  if (code === "clearsky" || code === "fair") return night ? "󰖔" : "󰖙"
-  if (code === "partlycloudy") return night ? "󰼱" : "󰖕"
-  if (code === "cloudy") return "󰖐"
-  if (code === "fog") return "󰖑"
-  if (code.indexOf("thunder") !== -1) return code.indexOf("snow") !== -1 ? "󰙿" : "󰙾"
-  if (code.indexOf("snow") !== -1) return "󰖘"
-  if (code.indexOf("sleet") !== -1) return "󰖒"
-  if (code.indexOf("heavyrain") !== -1) return "󰖖"
-  if (code.indexOf("rain") !== -1) return "󰖗"
-  return "󰖐"
+  if (code === "clearsky" || code === "fair") return night ? "\u{f0594}" : "\u{f0599}"
+  if (code === "partlycloudy") return night ? "\u{f0f31}" : "\u{f0595}"
+  if (code === "cloudy") return "\u{f0590}"
+  if (code === "fog") return "\u{f0591}"
+  if (code.indexOf("thunder") !== -1) return code.indexOf("snow") !== -1 ? "\u{f067f}" : "\u{f067e}"
+  if (code.indexOf("snow") !== -1) return "\u{f0598}"
+  if (code.indexOf("sleet") !== -1) return "\u{f0592}"
+  if (code.indexOf("heavyrain") !== -1) return "\u{f0596}"
+  if (code.indexOf("rain") !== -1) return "\u{f0597}"
+  return "\u{f0590}"
 }
 
 function windDirection(degrees) {
@@ -358,26 +346,10 @@ function windDirection(degrees) {
   return directions[Math.round(((value % 360) + 360) % 360 / 45) % 8]
 }
 
-function windSpeedKmh(metresPerSecond) {
-  var value = parseFloat(metresPerSecond)
-  return isNaN(value) ? null : Math.round(value * 3.6)
-}
-
 function formatIsoTime(value) {
   var date = new Date(value)
   if (isNaN(date.getTime())) return ""
   return String(date.getHours()).padStart(2, "0") + ":" + String(date.getMinutes()).padStart(2, "0")
-}
-
-function formatAge(value, now) {
-  var date = new Date(value)
-  if (isNaN(date.getTime())) return ""
-  var current = now instanceof Date ? now : new Date()
-  var minutes = Math.max(0, Math.round((current.getTime() - date.getTime()) / 60000))
-  if (minutes < 2) return "nå"
-  if (minutes < 60) return minutes + " min siden"
-  var hours = Math.floor(minutes / 60)
-  return hours + (hours === 1 ? " time siden" : " timer siden")
 }
 
 if (typeof module !== "undefined") {
@@ -387,8 +359,6 @@ if (typeof module !== "undefined") {
     parseGeocodingResults: parseGeocodingResults,
     locationCommit: locationCommit,
     parseBundle: parseBundle,
-    temperature: temperature,
-    precipitation: precipitation,
     uvIndex: uvIndex,
     localDateKey: localDateKey,
     forecastPoints: forecastPoints,
@@ -397,8 +367,6 @@ if (typeof module !== "undefined") {
     descriptionForSymbol: descriptionForSymbol,
     iconForSymbol: iconForSymbol,
     windDirection: windDirection,
-    windSpeedKmh: windSpeedKmh,
-    formatIsoTime: formatIsoTime,
-    formatAge: formatAge
+    formatIsoTime: formatIsoTime
   }
 }

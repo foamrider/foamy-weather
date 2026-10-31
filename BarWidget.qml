@@ -27,6 +27,8 @@ BarWidget {
     if (panelLoader.item && panelLoader.item.notifySummary) panelLoader.item.notifySummary()
   }
 
+  // The per-bar Panel (popup, settings); the weather data lives in WeatherService.
+  readonly property var panel: panelLoader.item
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
   function open() {
@@ -67,7 +69,7 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.vertical ? "" : (panelLoader.item ? panelLoader.item.barLabel : "󰖐 --")
+    text: root.vertical ? "" : (panelLoader.item ? panelLoader.item.barLabel : "\u{f0590} --")
     labelVisible: !root.vertical
     hasVisualContent: true
     horizontalMargin: 8.75
@@ -82,7 +84,7 @@ BarWidget {
     OpticalGlyph {
       visible: root.vertical
       anchors.fill: parent
-      text: panelLoader.item ? panelLoader.item.conditionIcon : "󰖐"
+      text: panelLoader.item ? panelLoader.item.conditionIcon : "\u{f0590}"
       fontFamily: button.fontFamily
       fontSize: button.fontSize
       color: button.foreground

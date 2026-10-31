@@ -18,6 +18,7 @@ fail() {
 
 cat >"$mock_bin/curl" <<'EOF'
 #!/bin/bash
+cat >>"$WEATHER_TEST_URLS"
 printf '%s\n' '{"address":{"town":"Example Town"}}'
 EOF
 
@@ -33,6 +34,7 @@ export XDG_CONFIG_HOME="$test_root/config"
 export XDG_CACHE_HOME="$test_root/cache"
 export WEATHER_LOCATION_RUNTIME_DIR="$test_root/runtime"
 export WEATHER_GEOCLUE_COMMAND="$mock_bin/where-am-i"
+export WEATHER_TEST_URLS="$test_root/urls"
 location_file="$XDG_CONFIG_HOME/omarchy/weather-location.local.json"
 
 "$location_writer" --set <<<'{"name":"Example","latitude":12.34,"longitude":56.78}'
@@ -48,9 +50,11 @@ jq -e '
 geoclue=$("$resolver" --force)
 jq -e '
   .name == "Example Town"
-  and .latitude == 12.3456
-  and .longitude == 56.7890
-  and .source == "geoclue"' <<<"$geoclue" >/dev/null || fail "GeoClue fallback was not resolved"
+  and .latitude == 12.35
+  and .longitude == 56.79
+  and .source == "geoclue"' <<<"$geoclue" >/dev/null || fail "GeoClue location was not resolved and rounded to about 1 km"
+grep -q 'lat=12.35&lon=56.79&' "$WEATHER_TEST_URLS" || fail "Nominatim must get the rounded coordinates"
+if grep -q '12.3456\|56.789' "$WEATHER_TEST_URLS"; then fail "precise coordinates reached Nominatim"; fi
 
 cached=$("$resolver")
 jq -e '.name == "Example Town" and .source == "geoclue-cache"' <<<"$cached" >/dev/null \
@@ -64,23 +68,15 @@ jq -e '.error == "Could not find automatic location"' <<<"$unavailable" >/dev/nu
 "$location_writer" --set <<<'{"name":"Example","latitude":12,"longitude":34}'
 if "$location_writer" --set <<<'{"name":"Invalid","latitude":91,"longitude":0}' 2>/dev/null; then fail "invalid latitude accepted"; fi
 jq -e '.name == "Example"' "$location_file" >/dev/null || fail "invalid location replaced saved location"
-# Validate and route writes through Omarchy rather than writing shell.json ourselves.
-cat >"$mock_bin/omarchy" <<'EOF'
-#!/bin/bash
-jq -cn '$ARGS.positional' --args -- "$@" >>"$WEATHER_TEST_CALLS"
-exit "${WEATHER_TEST_STATUS:-0}"
-EOF
-chmod +x "$mock_bin/omarchy"
-export WEATHER_TEST_CALLS="$test_root/settings-calls.jsonl"
-preferences_writer="$plugin_root/scripts/weather-preferences.sh"
-"$preferences_writer" example.weather units '"metric"'
-"$preferences_writer" example.weather automaticLocation false
-jq -se '.[0] == ["bar","set","example.weather","units","\"metric\"","--json"] and .[1] == ["bar","set","example.weather","automaticLocation","false","--json"]' "$WEATHER_TEST_CALLS" >/dev/null || fail "wrong shell settings arguments"
-for language in system en nb; do
-  if "$preferences_writer" example.weather language "\"$language\"" 2>/dev/null; then fail "retired language override accepted"; fi
-done
-if "$preferences_writer" example.weather language '"unsupported"' 2>/dev/null; then fail "invalid preference accepted"; fi
-if "$preferences_writer" example.weather id '"different.widget"' 2>/dev/null; then fail "unknown preference accepted"; fi
-[[ $(wc -l <"$WEATHER_TEST_CALLS") == 2 ]] || fail "invalid settings reached the shell"
-if WEATHER_TEST_STATUS=9 "$preferences_writer" example.weather animations true; then fail "shell failure was swallowed"; fi
-printf '%s\n' "Weather location and shell settings tests passed."
+# No private runtime directory: fail instead of falling back to /tmp.
+no_runtime=$(env -u XDG_RUNTIME_DIR -u WEATHER_LOCATION_RUNTIME_DIR "$resolver" --force)
+jq -e '.error == "Automatic location needs XDG_RUNTIME_DIR"' <<<"$no_runtime" >/dev/null \
+  || fail "missing XDG_RUNTIME_DIR must not fall back to /tmp"
+ln -s "$test_root/runtime" "$test_root/runtime-link"
+linked=$(WEATHER_LOCATION_RUNTIME_DIR="$test_root/runtime-link" "$resolver" --force)
+jq -e '.error == "Automatic location storage is not private"' <<<"$linked" >/dev/null \
+  || fail "a symlinked runtime directory must be refused"
+unknown=$("$resolver" --bogus)
+jq -e '.error == "Unknown option: %1" and .values == ["--bogus"]' <<<"$unknown" >/dev/null \
+  || fail "errors must be English keys with separate values"
+printf '%s\n' "Weather location tests passed."

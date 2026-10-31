@@ -1,22 +1,44 @@
 import QtQuick
 import QtQuick.Effects
+import qs.Commons as Commons
 import "WeatherScene.js" as Scene
+
+// The MET-driven sky behind the weather hero. Costs nothing while hidden:
+// no timer, no live texture, and a hidden popup window renders nothing.
+// While `shown` it renders at 20 Hz, or under reduced motion (`animate`
+// false) a single still frame that updates only when the weather changes.
 
 Item {
   id: root
   property var current: null
   property date now: new Date()
   property var location: null
-  property bool active: false
-  property color surfaceColor: "#1e1e2e"
+  property bool shown: false
+  property bool animate: true
+  property color surfaceColor: Commons.Color.popups.background
   property bool lightTheme: false
   property real cornerRadius: 13
   readonly property var conditions: Scene.conditions(current, now, location)
-  readonly property bool animating: active && conditions.available && sky.status !== ShaderEffect.Error
+  // The software renderer (CPU rendering) draws neither shaders nor
+  // MultiEffect; keep the static header there.
+  readonly property bool supported: GraphicsInfo.api !== GraphicsInfo.Software && GraphicsInfo.api !== GraphicsInfo.Unknown
+  readonly property bool drawable: supported && shown && conditions.available && sky.status !== ShaderEffect.Error
+  readonly property bool animating: drawable && animate
   property real elapsed: 0
   property real windOffset: 41.7
   property real evolution: 7.3
   clip: true
+
+  // A still frame: refresh the texture once when it becomes visible or the
+  // scene inputs change, never on a clock.
+  function stillFrame() {
+    if (drawable && !animate) sampledSky.scheduleUpdate()
+  }
+  onDrawableChanged: stillFrame()
+  onAnimateChanged: stillFrame()
+  onConditionsChanged: stillFrame()
+  onWidthChanged: stillFrame()
+  onHeightChanged: stillFrame()
 
   // Limit both fragment work and updates; no animation timer runs while closed.
   Timer {
@@ -107,7 +129,7 @@ Item {
   MultiEffect {
     anchors.fill: parent
     source: sampledSky
-    visible: root.conditions.available && sky.status !== ShaderEffect.Error
+    visible: root.supported && root.conditions.available && sky.status !== ShaderEffect.Error
     blurEnabled: true
     blurMax: 16
     blur: 0.15
@@ -120,7 +142,7 @@ Item {
     width: root.width
     height: root.height + root.cornerRadius
     radius: root.cornerRadius
-    visible: root.conditions.available && sky.status !== ShaderEffect.Error
+    visible: root.supported && root.conditions.available && sky.status !== ShaderEffect.Error
     gradient: Gradient {
       GradientStop { position: 0; color: Qt.alpha(root.surfaceColor, root.lightTheme ? 0.30 : 0.15) }
       GradientStop { position: 0.7; color: Qt.alpha(root.surfaceColor, root.lightTheme ? 0.45 : 0.25) }

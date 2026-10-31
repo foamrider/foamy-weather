@@ -11,7 +11,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HELPER = ROOT / "clipboard.sh"
+HELPER = ROOT / "kit/clipboard.sh"
 MOCK = '''#!/usr/bin/python3
 import json, os, signal, sys, time
 from pathlib import Path
@@ -64,8 +64,8 @@ class ClipboardTests(unittest.TestCase):
         return result
 
     def test_settings_use_safe_editor(self):
-        settings = (ROOT / "Panel.qml").read_text()
-        editor = (ROOT / "SafeTextField.qml").read_text()
+        settings = (ROOT / "WeatherSettings.qml").read_text()
+        editor = (ROOT / "kit/SafeTextField.qml").read_text()
         self.assertIn("SafeTextField {", settings)
         self.assertNotIn("Controls.TextField {", settings)
         self.assertIn("Controls.TextArea.flickable", editor)
