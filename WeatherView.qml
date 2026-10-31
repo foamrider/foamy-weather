@@ -340,32 +340,12 @@ PanelKeyCatcher {
               height: Style.space(100)
               radius: FoamyStyle.radius
               color: selected ? view.selectedCardColor : (hasCursor ? view.cursorCardColor : view.cardColor)
+              // The selected day: an even accent hairline on every side (no
+              // heavier bottom edge), as the clock's selected date.
+              border.width: selected ? Style.spacing.hairline : 0
+              border.color: Commons.Color.accent
               clip: true
               Behavior on color { ColorAnimation { duration: FoamyMotion.hover } }
-              Item {
-                anchors.bottom: parent.bottom
-                width: parent.width
-                height: Math.max(Style.space(2), Math.min(dayCard.radius, dayCard.width / 2, dayCard.height / 2))
-                visible: dayCard.selected
-                clip: true
-                // Two offset rounded fills reproduce an inset bottom shadow,
-                // tapering to nothing at the sides instead of curling upward.
-                Rectangle {
-                  anchors.bottom: parent.bottom
-                  width: dayCard.width
-                  height: dayCard.height
-                  radius: dayCard.radius
-                  color: Commons.Color.accent
-                  antialiasing: true
-                  Rectangle {
-                    anchors.fill: parent
-                    anchors.bottomMargin: Style.space(2)
-                    radius: dayCard.radius
-                    color: dayCard.color
-                    antialiasing: true
-                  }
-                }
-              }
               Column {
                 anchors.fill: parent; anchors.margins: Style.space(10)
                 spacing: Style.space(5)
