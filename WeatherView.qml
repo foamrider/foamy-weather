@@ -14,8 +14,8 @@ import "WeatherScene.js" as Scene
 // (FoamyPopup body). `controller` is the Panel, or the preview's mock with
 // the same properties and functions.
 //
-// Keyboard (one cursor): arrows/hjkl walk the day cards, refresh and
-// settings; moving onto a day selects it. Enter activates (with nothing
+// Keyboard (one cursor): arrows/hjkl walk the day cards, settings and the
+// footer's refresh; moving onto a day selects it. Enter activates (with nothing
 // under the cursor it opens Settings, as before), `s` Settings, `r` refresh,
 // Esc closes or leaves Settings, Tab/Shift-Tab switch bar panels.
 PanelKeyCatcher {
@@ -46,9 +46,15 @@ PanelKeyCatcher {
     : current.uvIndex < 8 ? FoamyI18n.t("High") : FoamyI18n.t("Very high")
   readonly property string updatedText: c.report && c.report.fetchedAt
     ? Preferences.age(c.report.fetchedAt, c.now, FoamyI18n.t, FoamyI18n.tn) : ""
-  readonly property string headerMeta: c.loading ? FoamyI18n.t("Refreshing…")
+  // The footer's freshness line (next to its refresh button).
+  readonly property string footerStatus: c.loading ? FoamyI18n.t("Refreshing…")
     : !c.networkReady ? FoamyI18n.t("Waiting for network…")
     : updatedText ? FoamyI18n.t("Updated %1", [updatedText]) : ""
+  // The band's meta under the place: today's range, or what is missing.
+  readonly property string headerMeta: !current
+    ? (c.loading ? FoamyI18n.t("Loading weather…") : FoamyI18n.t("Waiting for weather"))
+    : forecastDays.length
+      ? FoamyI18n.t("High %1 · Low %2", [temperature(forecastDays[0].high), temperature(forecastDays[0].low)]) : ""
 
   // The sky shader and its blur need a GPU renderer (known once the popup
   // window exists) and weather to show.
@@ -76,8 +82,8 @@ PanelKeyCatcher {
   }
 
   // --- cursor ------------------------------------------------------------------------
-  readonly property int refreshStop: forecastDays.length
-  readonly property int settingsStop: forecastDays.length + 1
+  readonly property int settingsStop: forecastDays.length
+  readonly property int refreshStop: forecastDays.length + 1
   FoamyCursor { id: cursor; count: view.forecastDays.length + 2 }
 
   function activate(index) {
@@ -156,10 +162,12 @@ PanelKeyCatcher {
       id: weatherColumn
       width: parent.width
 
+      // Centred band: the reading first, the place and today's range under
+      // it; Settings stays in the trailing top corner.
       FoamyHeroBand {
         id: band
         width: parent.width
-        iconName: "map-pin"
+        centered: true
         title: view.c.reportLocation || FoamyI18n.t("Choose location")
         meta: view.headerMeta
         settingsHasCursor: cursor.at(view.settingsStop)
@@ -169,22 +177,15 @@ PanelKeyCatcher {
         // otherwise (animations setting off, CPU rendering, no data) the
         // kit's static wash.
         background: view.skyAvailable ? skyComponent : null
-        trailing: [
-          FoamyAction {
-            iconName: "refresh-cw"
-            foreground: FoamyPalette.secondaryText
-            tooltipText: view.c.loading ? FoamyI18n.t("Refreshing…") : (!view.c.networkReady ? FoamyI18n.t("Waiting for network…") : FoamyI18n.t("Refresh"))
-            spinning: view.c.opened && view.c.loading
-            actionEnabled: !view.c.loading && view.c.networkReady
-            hasCursor: cursor.at(view.refreshStop)
-            onHoveredChanged: if (hovered) cursor.hover(view.refreshStop)
-            onClicked: view.activate(view.refreshStop)
-          }
-        ]
 
-        // Hero: the reading, the condition and today's range.
+        // Hero: the reading and the condition, centred.
         RowLayout {
-          Layout.fillWidth: true
+          id: heroRow
+          // Its own width (a layout fills by default), at most the slot's:
+          // a long condition elides.
+          Layout.alignment: Qt.AlignHCenter
+          Layout.fillWidth: false
+          Layout.maximumWidth: parent ? parent.width : implicitWidth
           spacing: FoamyStyle.padding
 
           Row {
@@ -205,38 +206,27 @@ PanelKeyCatcher {
             }
           }
 
-          Column {
-            Layout.fillWidth: true
+          RowLayout {
+            visible: !!view.current
             Layout.alignment: Qt.AlignVCenter
-            spacing: FoamyStyle.gapSmall
-            Row {
-              width: parent.width
-              spacing: FoamyStyle.gap
-              WeatherConditionIcon {
-                width: Style.space(28); height: width
-                symbol: view.current ? view.current.symbol : "cloudy"
-                lightTheme: view.lightTheme
-                anchors.verticalCenter: parent.verticalCenter
-              }
-              Label {
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - Style.space(28) - parent.spacing
-                horizontalAlignment: Text.AlignLeft
-                text: view.c.currentDescription
-                font.pixelSize: FoamyStyle.font.iconLarge
-                elide: Text.ElideRight
-              }
+            Layout.fillWidth: true
+            Layout.maximumWidth: implicitWidth
+            spacing: FoamyStyle.gap
+            WeatherConditionIcon {
+              Layout.alignment: Qt.AlignVCenter
+              Layout.preferredWidth: Style.space(28)
+              Layout.preferredHeight: Style.space(28)
+              symbol: view.current ? view.current.symbol : "cloudy"
+              lightTheme: view.lightTheme
             }
             Label {
-              width: parent.width
+              Layout.alignment: Qt.AlignVCenter
+              Layout.fillWidth: true
+              Layout.maximumWidth: implicitWidth
               horizontalAlignment: Text.AlignLeft
+              text: view.c.currentDescription
+              font.pixelSize: FoamyStyle.font.iconLarge
               elide: Text.ElideRight
-              text: !view.current ? (view.c.loading ? FoamyI18n.t("Loading weather…") : FoamyI18n.t("Waiting for weather"))
-                : view.forecastDays.length
-                  ? FoamyI18n.t("High %1 · Low %2", [view.temperature(view.forecastDays[0].high), view.temperature(view.forecastDays[0].low)]) : ""
-              visible: text !== ""
-              color: FoamyPalette.secondaryText
-              font.pixelSize: FoamyStyle.font.body
             }
           }
         }
@@ -247,7 +237,6 @@ PanelKeyCatcher {
         x: FoamyStyle.padding
         width: parent.width - FoamyStyle.padding * 2
         topPadding: FoamyStyle.sectionGap
-        bottomPadding: FoamyStyle.gapLarge
 
         // A note about what is shown: loading a new place, stale data, or an error.
         Rectangle {
@@ -447,17 +436,20 @@ PanelKeyCatcher {
           }
         }
 
-        Item { width: 1; height: Style.space(12) }
-        Rectangle { width: parent.width; height: 1; color: FoamyPalette.divider }
-        Item { width: 1; height: Style.space(10) }
-        // Data and place-name sources (CC BY 4.0 / ODbL ask for attribution).
-        Label {
+        Item { width: 1; height: FoamyStyle.gapLarge }
+        // Data and place-name sources (CC BY 4.0 / ODbL ask for attribution),
+        // when the report was fetched, and refresh.
+        FoamyPanelFooter {
+          id: footer
           width: parent.width
-          horizontalAlignment: Text.AlignLeft
-          elide: Text.ElideRight
-          text: view.c.automaticLabel ? FoamyI18n.t("MET Norway · OpenStreetMap") : FoamyI18n.t("MET Norway")
-          color: FoamyPalette.secondaryText
-          font.pixelSize: FoamyStyle.font.bodySmall
+          source: view.c.automaticLabel ? FoamyI18n.t("MET Norway · OpenStreetMap") : FoamyI18n.t("MET Norway")
+          status: view.footerStatus
+          refreshing: view.c.opened && view.c.loading
+          refreshEnabled: view.c.networkReady
+          refreshTooltip: view.c.loading ? FoamyI18n.t("Refreshing…") : (!view.c.networkReady ? FoamyI18n.t("Waiting for network…") : FoamyI18n.t("Refresh"))
+          refreshHasCursor: cursor.at(view.refreshStop)
+          onRefreshHovered: function(hovered) { if (hovered) cursor.hover(view.refreshStop) }
+          onRefreshClicked: view.activate(view.refreshStop)
         }
       }
     }
