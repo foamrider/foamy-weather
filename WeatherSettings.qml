@@ -126,6 +126,7 @@ FoamySettingsPage {
 
     FoamyDropdown {
       width: parent.width
+      compact: true
       label: FoamyI18n.t("Units")
       value: page.c.units
       options: [
