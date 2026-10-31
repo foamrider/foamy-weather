@@ -91,6 +91,8 @@ PanelKeyCatcher {
     else if (index === refreshStop) { if (!c.loading && c.networkReady) c.refresh(true) }
     else c.startEditingLocation()
   }
+  // A wheel notch scrolls a normal amount (high-resolution wheels too).
+  FoamyWheelScroll { target: weatherScroll }
 
   implicitWidth: FoamyStyle.popupWidthWide
   implicitHeight: c.editingLocation ? settingsLoader.implicitHeight : weatherColumn.implicitHeight
