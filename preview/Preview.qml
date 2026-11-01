@@ -11,13 +11,25 @@ Item {
   id: preview
   required property QtObject bar
   required property Item anchorItem
-  property var previewStates: ["forecast", "loading-new-location", "stale", "empty", "error", "settings", "settings-search", "settings-automatic"]
+  property var previewStates: ["forecast", "loading-new-location", "stale", "empty", "error", "settings", "settings-search", "settings-automatic",
+    "sky-fog", "sky-sun", "sky-snow", "sky-night", "sky-storm", "long-text"]
   property string previewState: "forecast"
   property int settleMs: 700
   readonly property Item popup: popup
 
-  readonly property date clock: new Date(2026, 9, 30, 9, 0, 0)
-  readonly property var sample: Mock.bundle(new Date(2026, 9, 30, 9, 0, 0))
+  // Sky states: the band over different MET conditions (Bergen). The
+  // offscreen software renderer draws no shader, so there they show the
+  // plain band; a GPU renderer draws the sky.
+  readonly property var skies: ({
+    "sky-fog": { clock: new Date(2026, 9, 30, 9, 0, 0), now: { symbol: "fog", wind: 0.8, cloud: 100 } },
+    "sky-sun": { clock: new Date(2026, 5, 21, 13, 0, 0), now: { symbol: "clearsky_day", wind: 3, cloud: 0 } },
+    "sky-snow": { clock: new Date(2026, 0, 15, 12, 0, 0), now: { symbol: "heavysnow", wind: 5, cloud: 100 } },
+    "sky-night": { clock: new Date(2026, 9, 30, 22, 0, 0), now: { symbol: "clearsky_night", wind: 2, cloud: 0 } },
+    "sky-storm": { clock: new Date(2026, 9, 30, 15, 0, 0), now: { symbol: "heavyrainshowersandthunder_day", wind: 18, cloud: 100 } }
+  })
+  readonly property var sky: skies[previewState] || null
+  readonly property date clock: sky ? sky.clock : new Date(2026, 9, 30, 9, 0, 0)
+  readonly property var sample: Mock.bundle(clock, sky ? sky.now : null)
   readonly property bool settingsState: previewState.indexOf("settings") === 0
 
   QtObject {
@@ -32,11 +44,15 @@ Item {
     readonly property string units: "metric"
     readonly property bool animations: true
     readonly property var configuredLocationState: ({ name: "Bergen", latitude: 60.39, longitude: 5.32, source: automaticLocation ? "geoclue" : "" })
-    readonly property string reportLocation: preview.previewState === "loading-new-location" ? "Oslo" : (report || preview.previewState === "error" ? "Bergen" : "")
+    readonly property string reportLocation: preview.previewState === "loading-new-location" ? "Oslo"
+      : preview.previewState === "long-text" ? "Llanfairpwllgwyngyllgogerychwyrndrobwllllantysiliogogogoch, Anglesey, Wales"
+      : (report || preview.previewState === "error" ? "Bergen" : "")
     readonly property bool loading: preview.previewState === "loading-new-location"
     readonly property bool networkReady: true
     readonly property bool savingLocation: false
-    readonly property string currentDescription: current ? FoamyI18n.t(Model.descriptionForSymbol(current.symbol)) : FoamyI18n.t("No weather data")
+    // long-text: a condition longer than any catalog's, to show it eliding.
+    readonly property string currentDescription: preview.previewState === "long-text" ? "Heavy rain showers and thunder over the fjord"
+      : current ? FoamyI18n.t(Model.descriptionForSymbol(current.symbol)) : FoamyI18n.t("No weather data")
     readonly property string statusText: preview.previewState === "loading-new-location" ? FoamyI18n.t("Loading weather for %1…", ["Bergen"]) : ""
     readonly property bool errorIsStale: preview.previewState === "stale"
     readonly property string errorText: preview.previewState === "stale" ? FoamyI18n.t("Showing last known weather")

@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -61,6 +62,9 @@ PanelKeyCatcher {
   readonly property bool skyAvailable: c.animations && GraphicsInfo.api !== GraphicsInfo.Software
     && GraphicsInfo.api !== GraphicsInfo.Unknown
     && Scene.conditions(current, c.now, c.configuredLocationState).available
+  // Latched: a shader that failed once keeps the wash (no retry loop).
+  property bool skyFailed: false
+  readonly property bool skyShown: skyAvailable && !skyFailed
 
   function temperature(value) { return Preferences.temperature(value, c.units, FoamyI18n.number) }
   function precipitation(value) { return Preferences.precipitation(value, c.units, FoamyI18n.number) }
@@ -134,6 +138,21 @@ PanelKeyCatcher {
     font.pixelSize: FoamyStyle.font.subtitle
   }
 
+  // Text over the sky: a soft shade of the popup surface around the glyphs
+  // (as the original header had), instead of a scrim that greys the sky.
+  // Light glyphs get a dark halo, dark ones (light themes) a light one.
+  Component {
+    id: skyShade
+    MultiEffect {
+      shadowEnabled: true
+      shadowColor: Commons.Color.popups.background
+      shadowOpacity: 0.9
+      shadowBlur: 0.25
+      blurMax: 8
+      shadowVerticalOffset: 1
+    }
+  }
+
   Component {
     id: skyComponent
     WeatherBackground {
@@ -147,6 +166,7 @@ PanelKeyCatcher {
       surfaceColor: Commons.Color.popups.background
       lightTheme: view.lightTheme
       cornerRadius: band.topRadius
+      onFailed: view.skyFailed = true
     }
   }
 
@@ -164,78 +184,214 @@ PanelKeyCatcher {
       id: weatherColumn
       width: parent.width
 
-      // Centred band: the reading first, the place and today's range under
-      // it; Settings stays in the trailing top corner.
+      // Immersive band: the MET sky undimmed behind the place, the reading
+      // and a frosted strip of the current readings, all centred; Settings
+      // stays in the trailing top corner. The kit's centred title and meta
+      // stay empty: the place leads here, above the reading.
       FoamyHeroBand {
         id: band
         width: parent.width
         centered: true
-        title: view.c.reportLocation || FoamyI18n.t("Choose location")
-        meta: view.headerMeta
         settingsHasCursor: cursor.at(view.settingsStop)
         onSettingsClicked: view.c.startEditingLocation()
         onSettingsHovered: function(hovered) { if (hovered) cursor.hover(view.settingsStop) }
         // The MET-driven sky is the band's picture when it can be drawn;
-        // otherwise (animations setting off, CPU rendering, no data) the
-        // kit's static wash.
-        background: view.skyAvailable ? skyComponent : null
+        // otherwise (animations setting off, CPU rendering, no data, a
+        // shader error) the kit's static wash.
+        background: view.skyShown ? skyComponent : null
+        // No readability scrim (it greys the sky out): text over the sky
+        // carries its own shade (skyShade) and the strip its own surface.
+        scrim: false
+        // The Settings button over the sky gets the same shade.
+        Binding { target: band.settingsButton; property: "layer.enabled"; value: view.skyShown }
+        Binding { target: band.settingsButton; property: "layer.effect"; value: skyShade }
 
-        // Hero: the reading and the condition, centred.
-        RowLayout {
-          id: heroRow
-          // Its own width (a layout fills by default), at most the slot's:
-          // a long condition elides.
-          Layout.alignment: Qt.AlignHCenter
-          Layout.fillWidth: false
-          Layout.maximumWidth: parent ? parent.width : implicitWidth
-          spacing: FoamyStyle.padding
+        ColumnLayout {
+          id: headline
+          objectName: "weatherHeadline"
+          // The hero slot's width, read from the band (not from the layout,
+          // which sizes itself from these rows).
+          readonly property real room: Math.max(0, band.width - band.centeredInset * 2)
+          // Its rows don't stretch, so as a layout it wouldn't either.
+          Layout.preferredWidth: room
+          spacing: FoamyStyle.gapSmall
+          layer.enabled: view.skyShown
+          layer.effect: skyShade
 
+          // The place, level with the Settings button.
           Row {
-            Layout.alignment: Qt.AlignVCenter
-            spacing: FoamyStyle.gapSmall
-            // A reading and its unit ("13 °C") stay in that order in a
-            // right-to-left layout too, the way bidi text keeps them.
-            LayoutMirroring.enabled: false
-            Label {
-              id: reading
-              text: view.current ? Preferences.temperatureValue(view.current.temperature, view.c.units, FoamyI18n.number) : "--"
-              font.pixelSize: FoamyStyle.font.numeral
+            id: placeRow
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredHeight: FoamyStyle.settingsButtonSize
+            spacing: FoamyStyle.gap
+            FoamyIcon {
+              id: pin
+              anchors.verticalCenter: parent.verticalCenter
+              width: FoamyStyle.iconSize; height: width
+              name: "map-pin"
+              color: FoamyPalette.text
             }
             Label {
-              text: view.current ? (view.c.units === "imperial" ? "°F" : "°C") : ""
-              font.pixelSize: FoamyStyle.font.display
-              topPadding: Style.space(8)
+              objectName: "weatherPlace"
+              anchors.verticalCenter: parent.verticalCenter
+              width: Math.min(implicitWidth, headline.room - pin.width - placeRow.spacing)
+              text: view.c.reportLocation || FoamyI18n.t("Choose location")
+              elide: Text.ElideRight
+              font.pixelSize: FoamyStyle.font.title
+              font.weight: Font.DemiBold
             }
           }
 
-          RowLayout {
-            visible: !!view.current
-            Layout.alignment: Qt.AlignVCenter
-            Layout.fillWidth: true
-            Layout.maximumWidth: implicitWidth
-            spacing: FoamyStyle.gap
-            WeatherConditionIcon {
-              Layout.alignment: Qt.AlignVCenter
-              Layout.preferredWidth: Style.space(28)
-              Layout.preferredHeight: Style.space(28)
-              symbol: view.current ? view.current.symbol : "cloudy"
-              lightTheme: view.lightTheme
+          // The reading, and beside it the condition over today's range,
+          // bottom-aligned: the range sits on the numeral's baseline.
+          Row {
+            id: heroRow
+            Layout.alignment: Qt.AlignHCenter
+            spacing: FoamyStyle.gapLarge + FoamyStyle.gapSmall
+
+            Row {
+              id: readingGroup
+              // A reading and its unit ("13 °C") stay in that order in a
+              // right-to-left layout too, the way bidi text keeps them.
+              LayoutMirroring.enabled: false
+              spacing: FoamyStyle.gapSmall
+              baselineOffset: reading.y + reading.baselineOffset
+              Label {
+                id: reading
+                text: view.current ? Preferences.temperatureValue(view.current.temperature, view.c.units, FoamyI18n.number) : "--"
+                font.pixelSize: FoamyStyle.font.numeral
+              }
+              // Superscript: the unit's cap height meets the numeral's.
+              Label {
+                id: unit
+                visible: !!view.current
+                anchors.baseline: reading.baseline
+                anchors.baselineOffset: unitMetrics.capHeight - numeralMetrics.capHeight
+                text: view.c.units === "imperial" ? "°F" : "°C"
+                font.pixelSize: FoamyStyle.font.display
+              }
+              // (`font` is read so the heights follow font changes.)
+              FontMetrics {
+                id: numeralMetrics
+                readonly property real capHeight: { font; return tightBoundingRect("0").height }
+                font: reading.font
+              }
+              FontMetrics {
+                id: unitMetrics
+                readonly property real capHeight: { font; return tightBoundingRect("C").height }
+                font: unit.font
+              }
             }
-            Label {
-              Layout.alignment: Qt.AlignVCenter
-              Layout.fillWidth: true
-              Layout.maximumWidth: implicitWidth
-              horizontalAlignment: Text.AlignLeft
-              text: view.c.currentDescription
-              font.pixelSize: FoamyStyle.font.iconLarge
-              elide: Text.ElideRight
+
+            Column {
+              id: conditionColumn
+              readonly property real available: Math.max(0, headline.room - readingGroup.width - heroRow.spacing)
+              anchors.baseline: readingGroup.baseline
+              baselineOffset: rangeText.y + rangeText.baselineOffset
+              spacing: FoamyStyle.gapSmall
+              // Lines start at the reading edge (mirrored anchors in RTL).
+              Row {
+                id: conditionRow
+                anchors.left: parent.left
+                visible: !!view.current
+                spacing: FoamyStyle.gap
+                WeatherConditionIcon {
+                  id: conditionIcon
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Style.space(26); height: width
+                  symbol: view.current ? view.current.symbol : "cloudy"
+                  lightTheme: view.lightTheme
+                }
+                Label {
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Math.min(implicitWidth, conditionColumn.available - conditionIcon.width - conditionRow.spacing)
+                  text: view.c.currentDescription
+                  elide: Text.ElideRight
+                  font.pixelSize: FoamyStyle.font.iconLarge
+                }
+              }
+              // Today's range, or what is missing.
+              Label {
+                id: rangeText
+                anchors.left: parent.left
+                width: Math.min(implicitWidth, conditionColumn.available)
+                text: view.headerMeta
+                elide: Text.ElideRight
+                // The muted tone is too faint on a bright sky (fog, snow).
+                color: view.skyShown ? FoamyPalette.text : FoamyPalette.secondaryText
+                font.pixelSize: FoamyStyle.font.body
+              }
+            }
+          }
+        }
+
+        // The current readings on a frosted strip at the band's foot. The
+        // hero slot keeps clear of the Settings button on both sides; the
+        // strip runs to the band's own padding instead.
+        Item {
+          visible: !!view.current
+          Layout.fillWidth: true
+          Layout.topMargin: FoamyStyle.gapLarge
+          implicitHeight: strip.height
+          Rectangle {
+            id: strip
+            objectName: "weatherMetricStrip"
+            x: FoamyStyle.padding - band.centeredInset
+            width: band.width - FoamyStyle.padding * 2
+            height: metricGrid.height
+            radius: FoamyStyle.radius
+            color: Qt.alpha(Commons.Color.popups.background, view.skyShown ? (view.lightTheme ? 0.55 : 0.45) : 0.35)
+            border.width: Style.spacing.hairline
+            border.color: Qt.alpha(Commons.Color.popups.text, 0.08)
+
+            Grid {
+              id: metricGrid
+              width: parent.width
+              columns: width < Style.space(380) ? 2 : 4
+              layer.enabled: view.skyShown
+              layer.effect: skyShade
+              Repeater {
+                model: [
+                  { label: FoamyI18n.t("Wind"), icon: "wind", value: view.current ? view.windSpeed(view.current.windSpeed) : "—", detail: view.current ? view.c.windLabel(view.current.windDirection) : "" },
+                  { label: FoamyI18n.t("Humidity"), icon: "droplets", value: view.current && view.current.humidity !== null ? FoamyI18n.number(view.current.humidity) + " %" : "—", detail: FoamyI18n.t("Relative") },
+                  { label: FoamyI18n.t("Next hour"), icon: "cloud-rain", value: view.current ? view.precipitation(view.current.precipitation) : "—", detail: FoamyI18n.t("Precipitation") },
+                  { label: FoamyI18n.t("UV index"), icon: "sun", value: view.current ? Model.uvIndex(view.current.uvIndex, FoamyI18n.number) : "—", detail: view.uvLabel }
+                ]
+                Item {
+                  required property var modelData
+                  required property int index
+                  width: metricGrid.width / metricGrid.columns
+                  height: metricColumn.implicitHeight + FoamyStyle.gapLarge * 2
+                  Rectangle {
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Style.spacing.hairline; height: parent.height - FoamyStyle.gapLarge * 2
+                    color: FoamyPalette.divider
+                    visible: parent.index % metricGrid.columns < metricGrid.columns - 1
+                  }
+                  Column {
+                    id: metricColumn
+                    width: parent.width
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(3)
+                    Row {
+                      anchors.horizontalCenter: parent.horizontalCenter
+                      spacing: Style.space(5)
+                      FoamyIcon { anchors.verticalCenter: parent.verticalCenter; width: Style.space(13); height: width; name: modelData.icon; color: FoamyPalette.secondaryText }
+                      Label { anchors.verticalCenter: parent.verticalCenter; text: modelData.label; color: FoamyPalette.secondaryText; font.pixelSize: FoamyStyle.font.bodySmall; font.letterSpacing: 0.6 }
+                    }
+                    Label { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.value; font.pixelSize: FoamyStyle.font.heading }
+                    Label { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.detail; color: FoamyPalette.secondaryText; font.pixelSize: FoamyStyle.font.bodySmall }
+                  }
+                }
+              }
             }
           }
         }
       }
-
       Column {
         id: body
+        objectName: "weatherBody"
         x: FoamyStyle.padding
         width: parent.width - FoamyStyle.padding * 2
         topPadding: FoamyStyle.sectionGap
@@ -280,46 +436,6 @@ PanelKeyCatcher {
         }
         Item { width: 1; height: FoamyStyle.padding; visible: view.c.statusText !== "" || view.c.errorText !== "" }
 
-        Grid {
-          id: metricGrid
-          visible: !!view.current
-          width: parent.width
-          columns: width < Style.space(380) ? 2 : 4
-          rowSpacing: Style.space(15)
-          Repeater {
-            model: [
-              { label: FoamyI18n.t("Wind"), icon: "wind", value: view.current ? view.windSpeed(view.current.windSpeed) : "—", detail: view.current ? view.c.windLabel(view.current.windDirection) : "" },
-              { label: FoamyI18n.t("Humidity"), icon: "droplets", value: view.current && view.current.humidity !== null ? FoamyI18n.number(view.current.humidity) + " %" : "—", detail: FoamyI18n.t("Relative") },
-              { label: FoamyI18n.t("Next hour"), icon: "cloud-rain", value: view.current ? view.precipitation(view.current.precipitation) : "—", detail: FoamyI18n.t("Precipitation") },
-              { label: FoamyI18n.t("UV index"), icon: "sun", value: view.current ? Model.uvIndex(view.current.uvIndex, FoamyI18n.number) : "—", detail: view.uvLabel }
-            ]
-            Item {
-              required property var modelData
-              required property int index
-              width: metricGrid.width / metricGrid.columns
-              height: Style.space(64)
-              Rectangle {
-                anchors.right: parent.right; width: 1; height: parent.height; color: FoamyPalette.divider
-                visible: parent.index % metricGrid.columns < metricGrid.columns - 1
-              }
-              Column {
-                width: parent.width
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(6)
-                Row {
-                  anchors.horizontalCenter: parent.horizontalCenter
-                  spacing: Style.space(5)
-                  FoamyIcon { anchors.verticalCenter: parent.verticalCenter; width: Style.space(14); height: width; name: modelData.icon; color: FoamyPalette.secondaryText }
-                  Label { anchors.verticalCenter: parent.verticalCenter; text: modelData.label; color: FoamyPalette.secondaryText; font.pixelSize: FoamyStyle.font.bodySmall; font.letterSpacing: 0.6 }
-                }
-                Label { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.value; font.pixelSize: FoamyStyle.font.iconLarge }
-                Label { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.detail; color: FoamyPalette.secondaryText; font.pixelSize: FoamyStyle.font.bodySmall }
-              }
-            }
-          }
-        }
-
-        Item { width: 1; height: Style.space(16); visible: view.forecastDays.length > 0 }
         Label { text: FoamyI18n.t("Three-day forecast"); visible: view.forecastDays.length > 0 }
         Item { width: 1; height: Style.space(11); visible: view.forecastDays.length > 0 }
         Grid {

@@ -92,6 +92,20 @@ ShellRoot {
         var bandSurface = shell.find(a.popup.bodyItem, "foamyHeroBandSurface")
         shell.check(bandSurface !== null && bandSurface.parent.y === 0 && bandSurface.parent.width === a.popup.bodyItem.width, "hero band is first and full width")
         shell.check(bandSurface.parent.background === null, "software renderer: band keeps the static wash instead of the sky")
+        var band = bandSurface.parent
+        shell.check(band.scrim === false, "no readability scrim over the band")
+        var headline = shell.find(a.popup.bodyItem, "weatherHeadline")
+        shell.check(headline !== null && !headline.layer.enabled, "software renderer: no text shade layer (nothing to shade)")
+        var place = shell.find(a.popup.bodyItem, "weatherPlace")
+        shell.check(place !== null && place.text === "Bergen" && shell.inside(place, band), "the place leads the band: " + (place && place.text))
+        // (The body has no window here, so layouts are not polished: the
+        // strip's place at the band's foot is checked in the preview renders.)
+        var strip = shell.find(a.popup.bodyItem, "weatherMetricStrip")
+        shell.check(strip !== null && shell.inside(strip, band)
+          && Math.abs(strip.width - (band.width - 2 * Kit.FoamyStyle.padding)) <= 1,
+          "metric strip in the band, band width less its padding: " + (strip && strip.width) + " of " + band.width)
+        shell.check(shell.find(a.popup.bodyItem, "weatherMetricStrip") === strip && !shell.inside(strip, shell.find(a.popup.bodyItem, "weatherBody")),
+          "no metric row in the body")
         a.startEditingLocation()
         break
       case 4:
@@ -141,6 +155,11 @@ ShellRoot {
         Qt.quit()
       }
     }
+  }
+
+  function inside(item, ancestor) {
+    for (var it = item; it; it = it.parent) if (it === ancestor) return true
+    return false
   }
 
   function find(item, name) {

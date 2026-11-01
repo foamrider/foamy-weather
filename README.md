@@ -30,10 +30,15 @@ nothing selected it opens Settings), `s` opens Settings, `r` refreshes, Esc
 closes or leaves Settings, Tab and Shift+Tab switch to the next bar panel.
 IPC: `omarchy-shell foamy.weather open|close|toggle|edit|refresh`.
 
+The header shows the place, the temperature with the condition and today's
+range, and a strip with wind, humidity, the next hour's precipitation and the
+UV index, over an animated sky drawn from the current MET conditions.
+
 When the location changes, the previous forecast stays visible, labelled with
 its own place, until the new one arrives. The animated sky runs only while the
 popup is open; with Omarchy's animations off (reduced motion) it is a still
-image, and with CPU rendering the plain header is shown.
+image, and with CPU rendering or the `animations` setting off the plain header
+is shown.
 
 ## Settings
 

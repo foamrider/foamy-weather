@@ -24,6 +24,8 @@ Item {
   readonly property bool supported: GraphicsInfo.api !== GraphicsInfo.Software && GraphicsInfo.api !== GraphicsInfo.Unknown
   readonly property bool drawable: supported && shown && conditions.available && sky.status !== ShaderEffect.Error
   readonly property bool animating: drawable && animate
+  // The shader could not be built; the view falls back to the plain band.
+  signal failed()
   property real elapsed: 0
   property real windOffset: 41.7
   property real evolution: 7.3
@@ -103,8 +105,10 @@ Item {
     property vector4d u_sky: Qt.vector4d(6, 0, 0, 0)
     property vector2d u_radiant: Qt.vector2d(0, 0)
     onStatusChanged: {
-      if (status === ShaderEffect.Error)
+      if (status === ShaderEffect.Error) {
         console.warn("Weather background shader failed; keeping static header:", log)
+        root.failed()
+      }
     }
   }
 
@@ -139,13 +143,17 @@ Item {
   }
 
   Rectangle {
+    id: veil
     width: root.width
     height: root.height + root.cornerRadius
     radius: root.cornerRadius
     visible: root.supported && root.conditions.available && sky.status !== ShaderEffect.Error
+    // A light theme's dark text needs a paler veil once the sky darkens
+    // (dusk, night): 0 by day, 1 with the sun 8° below the horizon.
+    readonly property real dusk: Math.max(0, Math.min(1, (0.05 - root.conditions.sunElevation) / 0.19))
     gradient: Gradient {
-      GradientStop { position: 0; color: Qt.alpha(root.surfaceColor, root.lightTheme ? 0.30 : 0.15) }
-      GradientStop { position: 0.7; color: Qt.alpha(root.surfaceColor, root.lightTheme ? 0.45 : 0.25) }
+      GradientStop { position: 0; color: Qt.alpha(root.surfaceColor, root.lightTheme ? 0.30 + 0.35 * veil.dusk : 0.15) }
+      GradientStop { position: 0.7; color: Qt.alpha(root.surfaceColor, root.lightTheme ? 0.45 + 0.25 * veil.dusk : 0.25) }
       GradientStop { position: root.height / Math.max(1, root.height + root.cornerRadius); color: root.surfaceColor }
     }
   }

@@ -5,7 +5,8 @@ var symbols = ["partlycloudy_day", "partlycloudy_day", "lightrain", "rain", "clo
   "fair_day", "clearsky_day", "partlycloudy_day", "cloudy", "lightrainshowers_day", "cloudy", "fair_night", "clearsky_night",
   "cloudy", "rain", "heavyrain", "rainshowers_day", "partlycloudy_day", "cloudy", "fair_night", "cloudy"]
 
-function bundle(start) {
+// `now` (optional) overrides the current hour: { symbol, wind (m/s), cloud (%) }.
+function bundle(start, now) {
   var series = []
   for (var i = 0; i < 24 * 3; i++) {
     var time = new Date(start.getTime() + i * 3600 * 1000)
@@ -20,6 +21,14 @@ function bundle(start) {
         next_1_hours: { summary: { symbol_code: symbol }, details: { precipitation_amount: symbol.indexOf("rain") >= 0 ? 0.6 : 0 } }
       }
     })
+    if (i === 0 && now) {
+      var point = series[0].data
+      point.next_1_hours.summary.symbol_code = now.symbol
+      point.next_1_hours.details.precipitation_amount = /rain|snow|sleet/.test(now.symbol) ? 1.2 : 0
+      point.instant.details.wind_speed = now.wind
+      point.instant.details.cloud_area_fraction = now.cloud
+      point.instant.details.relative_humidity = now.symbol.indexOf("fog") === 0 ? 98 : 78
+    }
   }
   var sun = []
   for (var d = 0; d < 3; d++) {
