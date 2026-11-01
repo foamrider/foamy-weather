@@ -12,7 +12,7 @@ Item {
   required property QtObject bar
   required property Item anchorItem
   property var previewStates: ["forecast", "loading-new-location", "stale", "empty", "error", "settings", "settings-search", "settings-automatic",
-    "sky-fog", "sky-overcast-day", "sky-sun", "sky-snow", "sky-night", "sky-storm", "long-text"]
+    "sky-fog", "sky-overcast-day", "sky-live", "sky-sun", "sky-snow", "sky-night", "sky-storm", "long-text"]
   property string previewState: "forecast"
   property int settleMs: 700
   readonly property Item popup: popup
@@ -23,6 +23,9 @@ Item {
   readonly property var skies: ({
     "sky-fog": { clock: new Date(2026, 9, 30, 9, 0, 0), now: { symbol: "fog", wind: 0.8, cloud: 100 } },
     "sky-overcast-day": { clock: new Date(2026, 10, 1, 12, 0, 0), now: { symbol: "cloudy", wind: 0.8, cloud: 100 } },
+    // The condition the header was checked against live (Mjøndalen).
+    "sky-live": { clock: new Date(2026, 10, 1, 11, 15, 0), now: { symbol: "cloudy", wind: 1.4, cloud: 100 },
+      place: { name: "Mjøndalen", latitude: 59.75, longitude: 10.0 } },
     "sky-sun": { clock: new Date(2026, 5, 21, 13, 0, 0), now: { symbol: "clearsky_day", wind: 3, cloud: 0 } },
     "sky-snow": { clock: new Date(2026, 0, 15, 12, 0, 0), now: { symbol: "heavysnow", wind: 5, cloud: 100 } },
     "sky-night": { clock: new Date(2026, 9, 30, 22, 0, 0), now: { symbol: "clearsky_night", wind: 2, cloud: 0 } },
@@ -44,10 +47,11 @@ Item {
     readonly property var current: Model.currentCondition(report)
     readonly property string units: "metric"
     readonly property bool animations: true
-    readonly property var configuredLocationState: ({ name: "Bergen", latitude: 60.39, longitude: 5.32, source: automaticLocation ? "geoclue" : "" })
+    readonly property var place: preview.sky && preview.sky.place ? preview.sky.place : { name: "Bergen", latitude: 60.39, longitude: 5.32 }
+    readonly property var configuredLocationState: ({ name: place.name, latitude: place.latitude, longitude: place.longitude, source: automaticLocation ? "geoclue" : "" })
     readonly property string reportLocation: preview.previewState === "loading-new-location" ? "Oslo"
       : preview.previewState === "long-text" ? "Llanfairpwllgwyngyllgogerychwyrndrobwllllantysiliogogogoch, Anglesey, Wales"
-      : (report || preview.previewState === "error" ? "Bergen" : "")
+      : (report || preview.previewState === "error" ? place.name : "")
     readonly property bool loading: preview.previewState === "loading-new-location"
     readonly property bool networkReady: true
     readonly property bool savingLocation: false

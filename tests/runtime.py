@@ -95,9 +95,7 @@ ShellRoot {
         var band = bandSurface.parent
         shell.check(band.scrim === false, "no readability scrim over the band")
         var headline = shell.find(a.popup.bodyItem, "weatherHeadline")
-        var halo = shell.find(a.popup.bodyItem, "weatherHeadlineHalo")
-        shell.check(headline !== null && !headline.layer.enabled && halo !== null && !halo.visible && !halo.source.live,
-          "text is never drawn through a layer; no halo without the sky")
+        shell.check(headline !== null && !headline.layer.enabled, "text is never drawn through a layer")
         shell.check(String(band.settingsButton.foreground) === String(Kit.FoamyPalette.secondaryText),
           "Settings keeps the kit's tone without the sky")
         var place = shell.find(a.popup.bodyItem, "weatherPlace")

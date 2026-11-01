@@ -23,6 +23,9 @@ Item {
   readonly property var drift: Scene.drift(conditions.wind)
   readonly property real brightness: Scene.brightness(conditions)
   readonly property real glare: Scene.glare(brightness, lightTheme)
+  // How far the sky is toned for white text (dark themes): any daylight sky
+  // competes with it; night skies are left as they are.
+  readonly property real calmAmount: lightTheme ? 0 : Math.min(1, glare / 0.5)
   // The software renderer (CPU rendering) draws neither shaders nor
   // MultiEffect; keep the static header there.
   readonly property bool supported: GraphicsInfo.api !== GraphicsInfo.Software && GraphicsInfo.api !== GraphicsInfo.Unknown
@@ -98,8 +101,15 @@ Item {
     property vector2d u_cbFeat: Qt.vector2d(0.4, 0.1)
     property real u_windOff: root.windOffset
     property real u_evo: root.evolution
-    property real u_filtAmt: 0
-    property vector3d u_filtTint: Qt.vector3d(1, 1, 1)
+    // Under white text the sky also leans a little toward the theme
+    // surface's hue (more where it is toned), so greys (fog, overcast) go
+    // the theme's way rather than muddy.
+    property real u_filtAmt: root.lightTheme ? 0 : 0.15 + 0.25 * root.calmAmount
+    property vector3d u_filtTint: {
+      var c = root.surfaceColor
+      var l = Math.max(0.02, 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b)
+      return Qt.vector3d(0.5 + 0.5 * c.r / l, 0.5 + 0.5 * c.g / l, 0.5 + 0.5 * c.b / l)
+    }
     property real u_filtSat: 1
     property real u_filtLift: 0
     property real u_p3: 0
@@ -108,6 +118,14 @@ Item {
     property vector4d u_pol: Qt.vector4d(0, 0, 0, 0)
     property vector4d u_sky: Qt.vector4d(6, 0, 0, 0)
     property vector2d u_radiant: Qt.vector2d(0, 0)
+    // The sky toned for the text over it (see the shader's "Calm"): a dark
+    // theme's white text gets bright skies rolled off toward a deep, still
+    // vivid range (deepest behind the title and reading); a light theme's
+    // dark text gets the sky lifted. Night skies in a dark theme are left
+    // as they are.
+    property vector4d u_calm: root.lightTheme
+      ? Qt.vector4d(0, 0, 0, 0.2 + 0.4 * root.glare)
+      : Qt.vector4d(root.calmAmount, 0.32, 0.13, 0)
     onStatusChanged: {
       if (status === ShaderEffect.Error) {
         console.warn("Weather background shader failed; keeping static header:", log)
@@ -152,11 +170,9 @@ Item {
     height: root.height + root.cornerRadius
     radius: root.cornerRadius
     visible: root.supported && root.conditions.available && sky.status !== ShaderEffect.Error
-    // Follows how much the sky competes with the text (Scene.glare), so
-    // text stays readable without greying out a sky that doesn't: a dark
-    // theme's light text needs more veil on bright skies (overcast, fog,
-    // snow), a light theme's dark text on all but the brightest.
-    readonly property real amount: root.lightTheme ? 0.45 + 0.35 * root.glare : 0.10 + 0.45 * root.glare
+    // The sky is toned in the shader; this only settles it a touch toward
+    // the surface and fades it into the body at the bottom.
+    readonly property real amount: root.lightTheme ? 0.12 : 0.06
     gradient: Gradient {
       GradientStop { position: 0; color: Qt.alpha(root.surfaceColor, veil.amount) }
       GradientStop { position: 0.6; color: Qt.alpha(root.surfaceColor, veil.amount) }

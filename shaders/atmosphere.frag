@@ -33,6 +33,7 @@ layout(std140, binding = 0) uniform buf {
     vec4 u_pol;
     vec4 u_sky;
     vec2 u_radiant;
+    vec4 u_calm;
 };
 layout(binding = 1) uniform sampler2D u_noise;
 #define NOISE_FETCH(uv) textureLod(u_noise, (uv), 0.0)
@@ -1749,7 +1750,32 @@ void main() {
   // (the sun's core, a lightning flash). Everything below is display-referred:
   // the film grade, the gamut conversion and the dither all keep their original
   // meaning only in encoded values, so they stay on this side of the encode.
-  sky = encodeSrgb(tonemap(max(sky, 0.0)));
+  sky = tonemap(max(sky, 0.0));
+
+  // ── Calm (text over the sky) ──
+  // The sky sits behind white (dark themes) or dark (light themes) text, so
+  // its luminance is kept to a range that text reads on, with colour, cloud
+  // structure and motion intact. x: how much; y: the exposure it settles to
+  // (a multiply, so clouds keep their contrast); z: a soft shoulder the
+  // highlights roll off under, lower behind the title and reading than
+  // further down; w: a floor the sky is lifted to for dark text.
+  if (u_calm.x > 0.001) {
+    float top = smoothstep(0.30, 0.58, p.y);
+    float lum = dot(sky, vec3(0.2126, 0.7152, 0.0722));
+    float cap = u_calm.z * mix(1.4, 1.0, top);
+    float exposed = lum * u_calm.y * mix(1.25, 1.0, top);
+    float rolled = cap * (1.0 - exp(-exposed / cap));   // slope 1 at black, never past cap
+    vec3 calm = sky * (rolled / max(lum, 1e-5));
+    // a deeper colour reads duller; keep it vivid
+    calm = max(mix(vec3(rolled), calm, 1.15), 0.0);
+    sky = mix(sky, calm, clamp(u_calm.x, 0.0, 1.0));
+  }
+  if (u_calm.w > 0.001) {
+    float floorLum = u_calm.w * mix(0.85, 1.0, smoothstep(0.30, 0.58, p.y));
+    sky = floorLum + (1.0 - floorLum) * sky;            // lifts the darks; whites stay
+  }
+
+  sky = encodeSrgb(sky);
 
   // ── Color filter ──
   if (u_filtAmt > 0.001) {

@@ -65,13 +65,6 @@ PanelKeyCatcher {
   readonly property real skyBrightness: Scene.brightness(skyConditions)
   // How much the sky competes with the text (Scene.glare).
   readonly property real skyGlare: Scene.glare(skyBrightness, lightTheme)
-  // The broad, soft halo under the headline (a cushion of veil that follows
-  // the text), as deep as the glare needs; next to nothing on a calm sky.
-  readonly property real cushionPad: Style.space(28)
-  readonly property real cushionSpread: 1.2
-  readonly property real cushionDownscale: 8
-  readonly property real cushionStrength: 2.5
-  readonly property real cushionAlpha: Math.min(0.95, (lightTheme ? 0.3 : 0.15) + 0.6 * skyGlare)
   // The strip's small labels over the sky: the muted tone, a step (light
   // themes: two) stronger.
   readonly property color stripMuted: skyShown ? Qt.tint(FoamyPalette.background, Qt.alpha(FoamyPalette.text, lightTheme ? 0.92 : 0.86)) : FoamyPalette.secondaryText
@@ -151,80 +144,20 @@ PanelKeyCatcher {
     font.pixelSize: FoamyStyle.font.subtitle
   }
 
-  // A soft halo of the popup surface around `target`'s glyphs (text over
-  // the sky), drawn under them: place it below the target in paint order
-  // (an earlier sibling, or the band's background). The text itself is never
-  // drawn through an effect, so it stays pixel-crisp at any scale; only the
-  // halo comes from a (low-resolution) copy. Nothing is drawn, and the copy
-  // is not updated, while not `shown`. Its position is mapped from the
-  // target's, following every ancestor's move. `spread` widens it (a tight
-  // edge, or a broad soft cushion), `strength` deepens it.
-  component TextHalo: ShaderEffect {
-    id: halo
-    required property Item target
-    property bool shown: false
-    property real pad: Style.space(10)
-    readonly property point at: {
-      for (var it = target; it; it = it.parent) { it.x; it.y; it.width }
-      target.height
-      return parent ? target.mapToItem(parent, 0, 0) : Qt.point(0, 0)
-    }
-    x: at.x - pad
-    y: at.y - pad
-    width: target.width + pad * 2
-    height: target.height + pad * 2
-    visible: shown
-    property variant source: ShaderEffectSource {
-      sourceItem: halo.target
-      hideSource: false
-      live: halo.shown
-      sourceRect: Qt.rect(-halo.pad, -halo.pad, halo.width, halo.height)
-      textureSize: Qt.size(Math.max(1, Math.ceil(halo.width / halo.downscale)), Math.max(1, Math.ceil(halo.height / halo.downscale)))
-    }
-    property real shadowAlpha: 0.95
-    property color shadowColor: Qt.alpha(Commons.Color.popups.background, shadowAlpha)
-    // The copy's resolution divisor: a broad halo blurs a coarser copy.
-    property real downscale: 3
-    property vector2d texel: Qt.vector2d(1 / Math.max(1, Math.ceil(width / downscale)), 1 / Math.max(1, Math.ceil(height / downscale)))
-    property vector2d offset: Qt.vector2d(0, 1 / Math.max(1, height))
-    // Taps at most a texel apart, so thin strokes never comb.
-    property real spread: 1
-    property real strength: 5
-    fragmentShader: "shaders/shade.frag.qsb"
-  }
-
   Component {
     id: skyComponent
-    Item {
+    WeatherBackground {
       anchors.fill: parent
-      WeatherBackground {
-        anchors.fill: parent
-        current: view.current
-        now: view.c.now
-        location: view.c.configuredLocationState
-        // Drawn only while the popup shows it; a still frame under reduced motion.
-        shown: view.c.opened && !view.c.editingLocation && band.y + band.height > weatherScroll.contentY
-        animate: !FoamyMotion.reduceMotion
-        surfaceColor: Commons.Color.popups.background
-        lightTheme: view.lightTheme
-        cornerRadius: band.topRadius
-        onFailed: view.skyFailed = true
-      }
-      // Settings (the kit's, over the band) gets the headline's halo; drawn
-      // here, above the sky and under the button.
-      TextHalo {
-        target: band.settingsButton
-        shown: view.skyShown
-        // A small target: a finer copy, and a denser cushion for thin strokes.
-        pad: view.cushionPad; downscale: 5; spread: 1.1; strength: 4; shadowAlpha: view.cushionAlpha
-      }
-      TextHalo {
-        objectName: "weatherSettingsHalo"
-        target: band.settingsButton
-        shown: view.skyShown
-        // Thin strokes: a denser halo.
-        strength: 6
-      }
+      current: view.current
+      now: view.c.now
+      location: view.c.configuredLocationState
+      // Drawn only while the popup shows it; a still frame under reduced motion.
+      shown: view.c.opened && !view.c.editingLocation && band.y + band.height > weatherScroll.contentY
+      animate: !FoamyMotion.reduceMotion
+      surfaceColor: Commons.Color.popups.background
+      lightTheme: view.lightTheme
+      cornerRadius: band.topRadius
+      onFailed: view.skyFailed = true
     }
   }
 
@@ -257,9 +190,9 @@ PanelKeyCatcher {
         // otherwise (animations setting off, CPU rendering, no data, a
         // shader error) the kit's static wash.
         background: view.skyShown ? skyComponent : null
-        // No readability scrim (it greys the sky out): the sky's own veil
-        // follows its brightness, the headline has a halo (TextHalo) and the
-        // strip its own surface.
+        // No readability scrim (it greys the sky out): the sky itself is
+        // toned for the text (WeatherBackground) and the strip has its own
+        // surface.
         scrim: false
         // Settings over the sky: the full text tone, like the headline (the
         // muted one fades into a bright sky).
@@ -270,127 +203,118 @@ PanelKeyCatcher {
           when: view.skyShown
         }
 
-        Item {
-          Layout.preferredWidth: headline.room
-          implicitHeight: headline.implicitHeight
-          TextHalo {
-            target: headline; shown: view.skyShown
-            pad: view.cushionPad; downscale: view.cushionDownscale; spread: view.cushionSpread; strength: view.cushionStrength; shadowAlpha: view.cushionAlpha
-          }
-          TextHalo { objectName: "weatherHeadlineHalo"; target: headline; shown: view.skyShown; strength: view.lightTheme ? 7 : 5 }
-          ColumnLayout {
-            id: headline
-            objectName: "weatherHeadline"
-            // The hero slot's width, read from the band (not from the layout,
-            // which sizes itself from these rows).
-            readonly property real room: Math.max(0, band.width - band.centeredInset * 2)
-            width: parent.width
-            height: implicitHeight
-            spacing: FoamyStyle.gapSmall
+        ColumnLayout {
+          id: headline
+          objectName: "weatherHeadline"
+          // The hero slot's width, read from the band (not from the layout,
+          // which sizes itself from these rows).
+          readonly property real room: Math.max(0, band.width - band.centeredInset * 2)
+          // Its rows don't stretch, so as a layout it wouldn't either.
+          Layout.preferredWidth: room
+          spacing: FoamyStyle.gapSmall
 
-            // The place, level with the Settings button.
+          // The place, level with the Settings button.
+          Row {
+            id: placeRow
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredHeight: FoamyStyle.settingsButtonSize
+            spacing: FoamyStyle.gap
+            FoamyIcon {
+              id: pin
+              anchors.verticalCenter: parent.verticalCenter
+              width: FoamyStyle.iconSize; height: width
+              name: "map-pin"
+              color: FoamyPalette.text
+            }
+            Label {
+              objectName: "weatherPlace"
+              anchors.verticalCenter: parent.verticalCenter
+              width: Math.min(implicitWidth, headline.room - pin.width - placeRow.spacing)
+              text: view.c.reportLocation || FoamyI18n.t("Choose location")
+              elide: Text.ElideRight
+              font.pixelSize: FoamyStyle.font.title
+              font.weight: Font.DemiBold
+            }
+          }
+
+          // The reading, and beside it the condition over today's range,
+          // bottom-aligned: the range sits on the numeral's baseline.
+          Row {
+            id: heroRow
+            Layout.alignment: Qt.AlignHCenter
+            spacing: FoamyStyle.gapLarge + FoamyStyle.gapSmall
+
             Row {
-              id: placeRow
-              Layout.alignment: Qt.AlignHCenter
-              Layout.preferredHeight: FoamyStyle.settingsButtonSize
-              spacing: FoamyStyle.gap
-              FoamyIcon {
-                id: pin
-                anchors.verticalCenter: parent.verticalCenter
-                width: FoamyStyle.iconSize; height: width
-                name: "map-pin"
-                color: FoamyPalette.text
-              }
+              id: readingGroup
+              // A reading and its unit ("13 °C") stay in that order in a
+              // right-to-left layout too, the way bidi text keeps them.
+              LayoutMirroring.enabled: false
+              spacing: FoamyStyle.gapSmall
+              baselineOffset: reading.y + reading.baselineOffset
               Label {
-                objectName: "weatherPlace"
-                anchors.verticalCenter: parent.verticalCenter
-                width: Math.min(implicitWidth, headline.room - pin.width - placeRow.spacing)
-                text: view.c.reportLocation || FoamyI18n.t("Choose location")
-                elide: Text.ElideRight
-                font.pixelSize: FoamyStyle.font.title
-                font.weight: Font.DemiBold
+                id: reading
+                text: view.current ? Preferences.temperatureValue(view.current.temperature, view.c.units, FoamyI18n.number) : "--"
+                font.pixelSize: FoamyStyle.font.numeral
+              }
+              // Superscript: the unit's cap height meets the numeral's.
+              Label {
+                id: unit
+                visible: !!view.current
+                anchors.baseline: reading.baseline
+                anchors.baselineOffset: unitMetrics.capHeight - numeralMetrics.capHeight
+                text: view.c.units === "imperial" ? "°F" : "°C"
+                font.pixelSize: FoamyStyle.font.display
+              }
+              // (`font` is read so the heights follow font changes.)
+              FontMetrics {
+                id: numeralMetrics
+                readonly property real capHeight: { font; return tightBoundingRect("0").height }
+                font: reading.font
+              }
+              FontMetrics {
+                id: unitMetrics
+                readonly property real capHeight: { font; return tightBoundingRect("C").height }
+                font: unit.font
               }
             }
 
-            // The reading, and beside it the condition over today's range,
-            // bottom-aligned: the range sits on the numeral's baseline.
-            Row {
-              id: heroRow
-              Layout.alignment: Qt.AlignHCenter
-              spacing: FoamyStyle.gapLarge + FoamyStyle.gapSmall
-
+            Column {
+              id: conditionColumn
+              readonly property real available: Math.max(0, headline.room - readingGroup.width - heroRow.spacing)
+              anchors.baseline: readingGroup.baseline
+              baselineOffset: rangeText.y + rangeText.baselineOffset
+              spacing: FoamyStyle.gapSmall
+              // Lines start at the reading edge (mirrored anchors in RTL).
               Row {
-                id: readingGroup
-                // A reading and its unit ("13 °C") stay in that order in a
-                // right-to-left layout too, the way bidi text keeps them.
-                LayoutMirroring.enabled: false
-                spacing: FoamyStyle.gapSmall
-                baselineOffset: reading.y + reading.baselineOffset
+                id: conditionRow
+                anchors.left: parent.left
+                visible: !!view.current
+                spacing: FoamyStyle.gap
+                WeatherConditionIcon {
+                  id: conditionIcon
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Style.space(26); height: width
+                  symbol: view.current ? view.current.symbol : "cloudy"
+                  lightTheme: view.lightTheme
+                }
                 Label {
-                  id: reading
-                  text: view.current ? Preferences.temperatureValue(view.current.temperature, view.c.units, FoamyI18n.number) : "--"
-                  font.pixelSize: FoamyStyle.font.numeral
-                }
-                // Superscript: the unit's cap height meets the numeral's.
-                Label {
-                  id: unit
-                  visible: !!view.current
-                  anchors.baseline: reading.baseline
-                  anchors.baselineOffset: unitMetrics.capHeight - numeralMetrics.capHeight
-                  text: view.c.units === "imperial" ? "°F" : "°C"
-                  font.pixelSize: FoamyStyle.font.display
-                }
-                // (`font` is read so the heights follow font changes.)
-                FontMetrics {
-                  id: numeralMetrics
-                  readonly property real capHeight: { font; return tightBoundingRect("0").height }
-                  font: reading.font
-                }
-                FontMetrics {
-                  id: unitMetrics
-                  readonly property real capHeight: { font; return tightBoundingRect("C").height }
-                  font: unit.font
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Math.min(implicitWidth, conditionColumn.available - conditionIcon.width - conditionRow.spacing)
+                  text: view.c.currentDescription
+                  elide: Text.ElideRight
+                  font.pixelSize: FoamyStyle.font.iconLarge
                 }
               }
-
-              Column {
-                id: conditionColumn
-                readonly property real available: Math.max(0, headline.room - readingGroup.width - heroRow.spacing)
-                anchors.baseline: readingGroup.baseline
-                baselineOffset: rangeText.y + rangeText.baselineOffset
-                spacing: FoamyStyle.gapSmall
-                // Lines start at the reading edge (mirrored anchors in RTL).
-                Row {
-                  id: conditionRow
-                  anchors.left: parent.left
-                  visible: !!view.current
-                  spacing: FoamyStyle.gap
-                  WeatherConditionIcon {
-                    id: conditionIcon
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: Style.space(26); height: width
-                    symbol: view.current ? view.current.symbol : "cloudy"
-                    lightTheme: view.lightTheme
-                  }
-                  Label {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, conditionColumn.available - conditionIcon.width - conditionRow.spacing)
-                    text: view.c.currentDescription
-                    elide: Text.ElideRight
-                    font.pixelSize: FoamyStyle.font.iconLarge
-                  }
-                }
-                // Today's range, or what is missing.
-                Label {
-                  id: rangeText
-                  anchors.left: parent.left
-                  width: Math.min(implicitWidth, conditionColumn.available)
-                  text: view.headerMeta
-                  elide: Text.ElideRight
-                  // The muted tone is too faint on a bright sky (fog, snow).
-                  color: view.skyShown ? FoamyPalette.text : FoamyPalette.secondaryText
-                  font.pixelSize: FoamyStyle.font.body
-                }
+              // Today's range, or what is missing.
+              Label {
+                id: rangeText
+                anchors.left: parent.left
+                width: Math.min(implicitWidth, conditionColumn.available)
+                text: view.headerMeta
+                elide: Text.ElideRight
+                // The muted tone is too faint on a bright sky (fog, snow).
+                color: view.skyShown ? FoamyPalette.text : FoamyPalette.secondaryText
+                font.pixelSize: FoamyStyle.font.body
               }
             }
           }
