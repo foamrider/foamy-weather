@@ -44,6 +44,8 @@ Item {
     if (drawable && !animate) sampledSky.scheduleUpdate()
   }
   onDrawableChanged: stillFrame()
+  // The still frame is a one-shot copy too: render it again in a new window.
+  Window.onWindowChanged: stillFrame()
   onAnimateChanged: stillFrame()
   onConditionsChanged: stillFrame()
   onWidthChanged: stillFrame()
@@ -74,7 +76,12 @@ Item {
     id: noiseTexture
     sourceItem: noise
     visible: false
-    live: false
+    // Live, not a one-shot copy: a one-shot copy is rendered once per window,
+    // and when the sky lands in another window (Quickshell replaces a
+    // layer-shell popup's window across close/open) it came back empty, so
+    // the sky lost all its cloud structure. The noise never changes, so a
+    // live copy is only rendered again when the scene is rebuilt.
+    live: true
     wrapMode: ShaderEffectSource.Repeat
     textureSize: Qt.size(256, 256)
   }
@@ -83,6 +90,7 @@ Item {
     id: sky
     width: root.width
     height: root.height
+    vertexShader: "shaders/atmosphere.vert.qsb"
     fragmentShader: "shaders/atmosphere.frag.qsb"
     property variant u_noise: noiseTexture
     property vector2d u_res: Qt.vector2d(width, height)

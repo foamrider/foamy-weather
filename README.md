@@ -125,6 +125,7 @@ bash tests/test-weather-location.sh
 bash tests/kit-check.sh
 python3 tests/i18n-runtime.py                  # OMARCHY_PATH=<4.5 tree> for 4.5
 python3 tests/runtime.py                       # needs foamy-kit (FOAMY_KIT)
+python3 tests/sky-gpu.py                       # the sky on a GPU (eglfs on a render node); skips without one
 ```
 
 `preview/Preview.qml` renders mock states with the foamy-kit preview harness.

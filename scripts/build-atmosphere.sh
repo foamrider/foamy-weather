@@ -9,3 +9,5 @@ if [[ ! -x "$qsb_bin" ]]; then
 fi
 "$qsb_bin" --glsl '330,300 es' -c \
   -o "$plugin_dir/shaders/atmosphere.frag.qsb" "$plugin_dir/shaders/atmosphere.frag"
+"$qsb_bin" --glsl '330,300 es' -c \
+  -o "$plugin_dir/shaders/atmosphere.vert.qsb" "$plugin_dir/shaders/atmosphere.vert"
