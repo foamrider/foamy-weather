@@ -19,6 +19,8 @@ Item {
   property bool lightTheme: false
   property real cornerRadius: 13
   readonly property var conditions: Scene.conditions(current, now, location)
+  // Per-second drift; calm weather still moves (see Scene.drift).
+  readonly property var drift: Scene.drift(conditions.wind)
   // The software renderer (CPU rendering) draws neither shaders nor
   // MultiEffect; keep the static header there.
   readonly property bool supported: GraphicsInfo.api !== GraphicsInfo.Software && GraphicsInfo.api !== GraphicsInfo.Unknown
@@ -49,8 +51,8 @@ Item {
     running: root.animating
     onTriggered: {
       root.elapsed = (root.elapsed + 0.05) % 4096
-      root.windOffset += (0.006 + root.conditions.wind * 0.22) * 0.05
-      root.evolution += (0.07 + root.conditions.wind * 0.09) * 0.05
+      root.windOffset += root.drift.offset * 0.05
+      root.evolution += root.drift.evolution * 0.05
     }
   }
 

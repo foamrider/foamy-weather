@@ -32,7 +32,8 @@ IPC: `omarchy-shell foamy.weather open|close|toggle|edit|refresh`.
 
 The header shows the place, the temperature with the condition and today's
 range, and a strip with wind, humidity, the next hour's precipitation and the
-UV index, over an animated sky drawn from the current MET conditions.
+UV index, over an animated sky drawn from the current MET conditions (clouds
+drift with the wind; calm weather and fog still move slowly).
 
 When the location changes, the previous forecast stays visible, labelled with
 its own place, until the new one arrives. The animated sky runs only while the

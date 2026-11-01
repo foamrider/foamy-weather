@@ -45,4 +45,14 @@ assert.ok(Scene.solarPosition(new Date("2026-06-21T22:00:00Z"), 78, 15).elevatio
 assert.ok(Scene.solarPosition(new Date("2026-12-21T10:00:00Z"), 78, 15).elevation < 0, "Polar winter remains dark")
 assert.ok(Scene.conditions({ symbol: "clearsky_night" }, noon, null).sunElevation < 0)
 assert.ok(Scene.conditions({ symbol: "fair_polartwilight" }, noon, { latitude: null, longitude: null }).sunElevation < 0)
-console.log("Weather scene tests passed (all MET precipitation variants, missing data, solar and polar conditions).")
+// Drift: calm air and fog still move (the old pace left calm fog static);
+// strong wind keeps its old pace, and the pace never falls with the wind.
+const calm = Scene.drift(0), gale = Scene.drift(1)
+assert.ok(calm.offset >= 0.03 && calm.evolution >= 0.12, "calm weather drifts")
+assert.ok(Math.abs(gale.offset - 0.226) < 1e-9 && Math.abs(gale.evolution - 0.16) < 1e-9, "strong wind keeps its pace")
+for (let w = 0; w < 1; w += 0.05) {
+  assert.ok(Scene.drift(w + 0.05).offset >= Scene.drift(w).offset && Scene.drift(w + 0.05).evolution >= Scene.drift(w).evolution)
+}
+assert.deepEqual(Scene.drift(NaN), calm)
+assert.deepEqual(Scene.drift(Scene.conditions({ symbol: "fog", windSpeed: 0.8 }, noon, location).wind), calm, "3 km/h fog drifts at the floor")
+console.log("Weather scene tests passed (all MET precipitation variants, missing data, solar and polar conditions, drift).")

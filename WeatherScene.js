@@ -64,4 +64,13 @@ function conditions(current, now, location) {
   }
 }
 
-if (typeof module !== "undefined") module.exports = { conditions: conditions, solarPosition: solarPosition }
+// Sky drift per second for `wind` (0..1, conditions().wind): the cloud
+// layers' offset and the clouds' evolution. Both follow the wind, with a floor
+// (about a light breeze) so calm weather and fog still visibly move; strong
+// wind keeps its old pace.
+function drift(wind) {
+  var w = bounded(wind, 0, 0, 1)
+  return { offset: Math.max(0.03, 0.006 + w * 0.22), evolution: Math.max(0.12, 0.07 + w * 0.09) }
+}
+
+if (typeof module !== "undefined") module.exports = { conditions: conditions, solarPosition: solarPosition, drift: drift }

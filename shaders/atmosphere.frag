@@ -1694,6 +1694,16 @@ void main() {
     // thin haze only crushes the horizon; the thicker it gets, the higher it climbs toward the zenith, covering the whole sky
     float reach = mix(0.22, 1.0, u_haze * u_haze);
     float hz = u_haze * mix(1.0, reach, smoothstep(0.0, 0.45, h));
+    // fog (thick haze) is never a flat sheet: it thins and thickens in broad
+    // banks carried on the integrated wind offset, so even calm fog drifts
+    float fogBanks = smoothstep(0.5, 0.9, u_haze);
+    if (fogBanks > 0.001) {
+      vec2 fq = vec2(p.x * aspect, p.y * 2.4) * 1.3 + vec2(u_windOff * 2.0, u_evo * 0.10);
+      float bank = smoothstep(0.30, 0.66, fbm4(fq + vec2(0.6 * fbm2(fq * 0.7 + u_evo * 0.2), 0.0)));
+      hz *= mix(1.0, 0.62 + 0.45 * bank, fogBanks);
+      // denser banks catch more light, thin gaps read darker
+      hazeCol *= mix(1.0, 0.84 + 0.30 * bank, fogBanks);
+    }
     // cutting haze is half the reason to carry the filter
     hz *= 1.0 - u_pol.x * dop * 0.45;
     sky = overlay(sky, hazeCol, clamp(hz, 0.0, 0.96));
