@@ -12,7 +12,7 @@ Item {
   required property QtObject bar
   required property Item anchorItem
   property var previewStates: ["forecast", "loading-new-location", "stale", "empty", "error", "settings", "settings-search", "settings-automatic",
-    "sky-fog", "sky-sun", "sky-snow", "sky-night", "sky-storm", "long-text"]
+    "sky-fog", "sky-overcast-day", "sky-sun", "sky-snow", "sky-night", "sky-storm", "long-text"]
   property string previewState: "forecast"
   property int settleMs: 700
   readonly property Item popup: popup
@@ -22,6 +22,7 @@ Item {
   // plain band; a GPU renderer draws the sky.
   readonly property var skies: ({
     "sky-fog": { clock: new Date(2026, 9, 30, 9, 0, 0), now: { symbol: "fog", wind: 0.8, cloud: 100 } },
+    "sky-overcast-day": { clock: new Date(2026, 10, 1, 12, 0, 0), now: { symbol: "cloudy", wind: 0.8, cloud: 100 } },
     "sky-sun": { clock: new Date(2026, 5, 21, 13, 0, 0), now: { symbol: "clearsky_day", wind: 3, cloud: 0 } },
     "sky-snow": { clock: new Date(2026, 0, 15, 12, 0, 0), now: { symbol: "heavysnow", wind: 5, cloud: 100 } },
     "sky-night": { clock: new Date(2026, 9, 30, 22, 0, 0), now: { symbol: "clearsky_night", wind: 2, cloud: 0 } },

@@ -73,4 +73,24 @@ function drift(wind) {
   return { offset: Math.max(0.03, 0.006 + w * 0.22), evolution: Math.max(0.12, 0.07 + w * 0.09) }
 }
 
-if (typeof module !== "undefined") module.exports = { conditions: conditions, solarPosition: solarPosition, drift: drift }
+// How bright the drawn sky is, 0 (night) … 1 (overcast, fog or snow by
+// day), for the veil and surfaces that keep text readable over it. Daylight
+// follows the sun's elevation; a clear day sky is a mid blue, cloud, haze
+// and snow whiten it.
+function brightness(c) {
+  if (!c || !c.available) return 0
+  var t = Math.max(0, Math.min(1, (bounded(c.sunElevation, 0, -2, 2) + 0.12) / 0.32))
+  var day = t * t * (3 - 2 * t)
+  var white = Math.max(c.cover || 0, c.haze || 0, c.snow || 0)
+  return day * (0.55 + 0.45 * white)
+}
+
+// How much the sky competes with the text, 0 … 1: a dark theme's light text
+// against bright skies; a light theme's dark text against nearly every sky
+// (even fog, snow and overcast are drawn mid grey), most at night.
+function glare(skyBrightness, lightTheme) {
+  var b = bounded(skyBrightness, 0, 0, 1)
+  return lightTheme ? 1 - 0.3 * b : b
+}
+
+if (typeof module !== "undefined") module.exports = { conditions: conditions, solarPosition: solarPosition, drift: drift, brightness: brightness, glare: glare }

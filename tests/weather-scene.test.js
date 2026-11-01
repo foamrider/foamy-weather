@@ -55,4 +55,17 @@ for (let w = 0; w < 1; w += 0.05) {
 }
 assert.deepEqual(Scene.drift(NaN), calm)
 assert.deepEqual(Scene.drift(Scene.conditions({ symbol: "fog", windSpeed: 0.8 }, noon, location).wind), calm, "3 km/h fog drifts at the floor")
+// Brightness: night 0, a clear day mid, overcast/fog/snow by day brightest.
+const at = (symbol, when) => Scene.brightness(Scene.conditions({ symbol }, when, location))
+assert.equal(at("cloudy", new Date("2026-09-24T23:00:00Z")), 0)
+assert.ok(at("clearsky_day", noon) > 0.4 && at("clearsky_day", noon) < 0.7)
+for (const symbol of ["cloudy", "fog", "heavysnow"]) assert.ok(at(symbol, noon) > 0.9, symbol)
+assert.equal(Scene.brightness(Scene.conditions(null, noon, location)), 0)
+// Glare: a dark theme's light text competes with bright skies only; a light
+// theme's dark text with every sky, most at night.
+assert.equal(Scene.glare(0, false), 0)
+assert.equal(Scene.glare(1, false), 1)
+assert.equal(Scene.glare(0, true), 1)
+assert.ok(Scene.glare(1, true) >= 0.5)
+assert.equal(Scene.glare(NaN, false), 0)
 console.log("Weather scene tests passed (all MET precipitation variants, missing data, solar and polar conditions, drift).")

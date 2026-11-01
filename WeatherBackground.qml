@@ -21,6 +21,8 @@ Item {
   readonly property var conditions: Scene.conditions(current, now, location)
   // Per-second drift; calm weather still moves (see Scene.drift).
   readonly property var drift: Scene.drift(conditions.wind)
+  readonly property real brightness: Scene.brightness(conditions)
+  readonly property real glare: Scene.glare(brightness, lightTheme)
   // The software renderer (CPU rendering) draws neither shaders nor
   // MultiEffect; keep the static header there.
   readonly property bool supported: GraphicsInfo.api !== GraphicsInfo.Software && GraphicsInfo.api !== GraphicsInfo.Unknown
@@ -150,12 +152,14 @@ Item {
     height: root.height + root.cornerRadius
     radius: root.cornerRadius
     visible: root.supported && root.conditions.available && sky.status !== ShaderEffect.Error
-    // A light theme's dark text needs a paler veil once the sky darkens
-    // (dusk, night): 0 by day, 1 with the sun 8° below the horizon.
-    readonly property real dusk: Math.max(0, Math.min(1, (0.05 - root.conditions.sunElevation) / 0.19))
+    // Follows how much the sky competes with the text (Scene.glare), so
+    // text stays readable without greying out a sky that doesn't: a dark
+    // theme's light text needs more veil on bright skies (overcast, fog,
+    // snow), a light theme's dark text on all but the brightest.
+    readonly property real amount: root.lightTheme ? 0.45 + 0.35 * root.glare : 0.10 + 0.45 * root.glare
     gradient: Gradient {
-      GradientStop { position: 0; color: Qt.alpha(root.surfaceColor, root.lightTheme ? 0.30 + 0.35 * veil.dusk : 0.15) }
-      GradientStop { position: 0.7; color: Qt.alpha(root.surfaceColor, root.lightTheme ? 0.45 + 0.25 * veil.dusk : 0.25) }
+      GradientStop { position: 0; color: Qt.alpha(root.surfaceColor, veil.amount) }
+      GradientStop { position: 0.6; color: Qt.alpha(root.surfaceColor, veil.amount) }
       GradientStop { position: root.height / Math.max(1, root.height + root.cornerRadius); color: root.surfaceColor }
     }
   }

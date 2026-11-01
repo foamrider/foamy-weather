@@ -9,3 +9,6 @@ if [[ ! -x "$qsb_bin" ]]; then
 fi
 "$qsb_bin" --glsl '330,300 es' -c \
   -o "$plugin_dir/shaders/atmosphere.frag.qsb" "$plugin_dir/shaders/atmosphere.frag"
+# The text halo is simple enough for every GLSL Qt's own shaders target.
+"$qsb_bin" --glsl '100 es,120,150' -c \
+  -o "$plugin_dir/shaders/shade.frag.qsb" "$plugin_dir/shaders/shade.frag"
