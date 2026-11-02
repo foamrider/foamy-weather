@@ -1,6 +1,7 @@
 """Load the real plugin offscreen on 4.0 and 4.5 (foamy-kit harness) and check
-the shared service, leader election, lazy popup body, settings saving, report
-retention across a location change, and the sky's motion gates.
+the shared service, leader election, lazy popup body, settings read through
+the schema and saving, report retention across a location change, and the
+sky's motion gates.
 
   python3 tests/runtime.py [--host 4.0|4.5|both]
 
@@ -41,7 +42,9 @@ ShellRoot {
   Component.onCompleted: {
     var component = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
     if (component.status !== Component.Ready) { console.log("FOAMY FAIL load " + component.errorString()); Qt.quit(); return }
-    var settings = { id: "foamy.weather", units: "metric", animations: true }
+    // Out-of-range or mistyped stored values read as their defaults; the agent is trimmed.
+    var settings = { id: "foamy.weather", units: "metric", animations: true, refreshMinutes: 2,
+                     locationRefreshMinutes: "45", requestUserAgent: "  example-agent/1.0  " }
     widgets = [component.createObject(holder, { bar: barA, moduleName: "foamy.weather", settings: settings }),
                component.createObject(holder, { bar: barB, moduleName: "foamy.weather", settings: settings })]
     tick.start()
@@ -64,6 +67,10 @@ ShellRoot {
         shell.check(Kit.FoamyShared.memberCount("weather") === 2, "two members in scope weather")
         shell.check(Weather.WeatherService.active, "service active with members")
         shell.check(Weather.WeatherService.settings.units === "metric", "leader handed its settings to the service")
+        var prefs = Weather.WeatherService.preferences
+        shell.check(prefs.refreshMinutes === 30 && Weather.WeatherService.refreshTimer.interval === 30 * 60 * 1000
+          && prefs.locationRefreshMinutes === 15, "invalid intervals read as the defaults: " + JSON.stringify(prefs))
+        shell.check(Weather.WeatherService.requestUserAgent === "example-agent/1.0", "agent trimmed after the schema read")
         shell.check(!a.popup.bodyItem && !b.popup.bodyItem, "popup bodies are lazy")
         shell.check(!Weather.WeatherService.weatherProc.running && !Weather.WeatherService.locationProc.running, "no helper without a location")
         // A report for the configured coordinates, shared by every instance.

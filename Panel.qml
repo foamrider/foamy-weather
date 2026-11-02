@@ -6,6 +6,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "kit"
+import "kit/FoamyPrefs.js" as Prefs
 import "Model.js" as Model
 import "Preferences.js" as Preferences
 
@@ -48,7 +49,7 @@ Panel {
   }
   FoamySettingsState { id: settingsState; panel: root; onHidden: root.clearSearch() }
 
-  readonly property var preferences: Preferences.fromSettings(prefs.effectiveSettings)
+  readonly property var preferences: Prefs.values(Preferences.fields, prefs.effectiveSettings)
   readonly property string units: preferences.units
   readonly property bool animations: preferences.animations
   readonly property bool automaticLocation: WeatherService.automaticLocation

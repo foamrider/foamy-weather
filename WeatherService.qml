@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Networking
 import "kit"
+import "kit/FoamyPrefs.js" as Prefs
 import "Model.js" as Model
 import "Preferences.js" as Preferences
 
@@ -17,9 +18,11 @@ QtObject {
 
   // --- inputs ------------------------------------------------------------------
   property var settings: ({})
-  readonly property var preferences: Preferences.fromSettings(settings)
+  readonly property var preferences: Prefs.values(Preferences.fields, settings)
   readonly property bool automaticLocation: preferences.automaticLocation
-  readonly property string requestUserAgent: preferences.requestUserAgent
+  // Trimmed after the schema read: the scripts only use their identifying
+  // default (MET's terms) when the agent is empty, so a blank one must be.
+  readonly property string requestUserAgent: preferences.requestUserAgent.trim()
   // Nothing runs until a bar widget exists (and stops if the last one goes).
   readonly property bool active: FoamyShared.memberCount("weather") > 0
 

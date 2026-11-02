@@ -45,6 +45,8 @@ is shown.
 
 Settings live in the widget's entry in `shell.json`. The popup sets the first
 three; set the others with `omarchy bar set foamy.weather <key> <json> --json`.
+A stored value outside these rules (a string, or out of range) reads as the
+default, as the popup would refuse it.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -53,7 +55,7 @@ three; set the others with `omarchy bar set foamy.weather <key> <json> --json`.
 | `animations` | `true` | Animated sky behind the current conditions |
 | `refreshMinutes` | `30` | Forecast refresh interval, 5–1440 minutes |
 | `locationRefreshMinutes` | `15` | Automatic-location refresh interval, 5–1440 minutes |
-| `requestUserAgent` | `""` | User-Agent for MET Norway and OpenStreetMap requests (printable ASCII, 200 characters); empty uses `foamy-weather/<version> (+repository URL)` |
+| `requestUserAgent` | `""` | User-Agent for MET Norway and OpenStreetMap requests (printable ASCII, 200 characters); empty or blank uses `foamy-weather/<version> (+repository URL)` |
 
 The searched location is stored in `~/.config/omarchy/weather-location.local.json`;
 without one, the stock weather location (`~/.local/state/omarchy/settings/weather.json`)

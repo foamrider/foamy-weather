@@ -1,6 +1,7 @@
 // Widget settings live in the bar entry in shell.json (manifest.json
-// barWidget.schema documents them). `fields` is the schema FoamyPrefs saves
-// against; forecasts themselves stay in MET's original units.
+// barWidget.schema documents them). `fields` is the schema kit/FoamyPrefs.js
+// saves against and reads through (Prefs.values: an invalid stored value reads
+// as its default); forecasts themselves stay in MET's original units.
 var fields = [
   { key: "units", type: "enum", options: ["metric", "imperial"], defaultValue: "metric" },
   { key: "automaticLocation", type: "boolean", defaultValue: false },
@@ -9,26 +10,6 @@ var fields = [
   { key: "locationRefreshMinutes", type: "integer", min: 5, max: 1440, defaultValue: 15 },
   { key: "requestUserAgent", type: "string", maxLength: 200, pattern: "^[ -~]*$", defaultValue: "" }
 ]
-
-function minutes(value, fallback) {
-  var number = parseInt(value, 10)
-  if (!isFinite(number)) return fallback
-  return Math.max(5, Math.min(1440, number))
-}
-
-function fromSettings(value) {
-  value = value && typeof value === "object" && !Array.isArray(value) ? value : {}
-  var agent = typeof value.requestUserAgent === "string" && /^[ -~]{0,200}$/.test(value.requestUserAgent)
-    ? value.requestUserAgent.trim() : ""
-  return {
-    units: value.units === "imperial" ? "imperial" : "metric",
-    automaticLocation: value.automaticLocation === true,
-    animations: value.animations !== false,
-    refreshMinutes: minutes(value.refreshMinutes, 30),
-    locationRefreshMinutes: minutes(value.locationRefreshMinutes, 15),
-    requestUserAgent: agent
-  }
-}
 
 // `number` writes digits for the display language (FoamyI18n.number);
 // without it numbers are written as they are.
@@ -81,4 +62,4 @@ function age(value, now, tr, tn) {
   return tn("%1 hours ago", Math.floor(minutes / 60))
 }
 
-if (typeof module !== "undefined") module.exports = { fields, fromSettings, temperature, temperatureValue, precipitation, wind, age }
+if (typeof module !== "undefined") module.exports = { fields, temperature, temperatureValue, precipitation, wind, age }

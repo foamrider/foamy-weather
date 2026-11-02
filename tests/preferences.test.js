@@ -1,22 +1,32 @@
 const I18n = require('./i18n.cjs');
 const assert = require("node:assert/strict")
 const P = require("../Preferences.js")
+const Prefs = require("../kit/node-loader.cjs").load("FoamyPrefs")
+// Reads go through the save schema (Panel and WeatherService), so a stored
+// value the settings UI would refuse reads as its default, never clamped.
+// (Spread: the kit runs in its own vm context, with its own Object prototype.)
+const read = settings => ({...Prefs.values(P.fields, settings)})
 const defaults = {units:'metric', automaticLocation:false, animations:true, refreshMinutes:30, locationRefreshMinutes:15, requestUserAgent:''};
-assert.deepEqual(P.fromSettings({language: 'nb'}), defaults);
-assert.deepEqual(P.fromSettings({language:'en', units:'imperial', automaticLocation:true, animations:false}), {...defaults, units:'imperial', automaticLocation:true, animations:false});
-assert.equal(P.fromSettings({refreshMinutes: 1}).refreshMinutes, 5);
-assert.equal(P.fromSettings({refreshMinutes: "60"}).refreshMinutes, 60);
-assert.equal(P.fromSettings({locationRefreshMinutes: 99999}).locationRefreshMinutes, 1440);
-assert.equal(P.fromSettings({requestUserAgent: "bad\nagent"}).requestUserAgent, "");
+assert.deepEqual(read({language: 'nb'}), defaults);
+assert.deepEqual(read({language:'en', units:'imperial', automaticLocation:true, animations:false}), {...defaults, units:'imperial', automaticLocation:true, animations:false});
+assert.equal(read({refreshMinutes: 60}).refreshMinutes, 60);
+assert.equal(read({refreshMinutes: 5, locationRefreshMinutes: 1440}).locationRefreshMinutes, 1440);
+for (const [key, value] of [["refreshMinutes", 2], ["refreshMinutes", 1441], ["refreshMinutes", "45"], ["refreshMinutes", 30.5],
+                            ["locationRefreshMinutes", 99999], ["locationRefreshMinutes", 4], ["locationRefreshMinutes", "60"], ["units", "kelvin"]])
+  assert.deepEqual(read({[key]: value})[key], defaults[key], `${key}: ${JSON.stringify(value)} reads as the default`);
+assert.equal(read({requestUserAgent: "bad\nagent"}).requestUserAgent, "");
+assert.equal(read({requestUserAgent: "x".repeat(201)}).requestUserAgent, "");
+// WeatherService trims after the read; a blank agent leaves the scripts' default.
+assert.equal(read({requestUserAgent: "  my-app/1.0 (me@example.com)  "}).requestUserAgent.trim(), "my-app/1.0 (me@example.com)");
 // The save schema covers every documented setting and matches the manifest.
 const manifest = require('../manifest.json');
 assert.deepEqual(P.fields.map(f => f.key).sort(), manifest.barWidget.schema.map(f => f.key).sort());
 for (const f of P.fields) assert.deepEqual(manifest.barWidget.defaults[f.key], f.defaultValue, f.key);
 assert.equal(P.temperature(-3.4, "metric", v => "٫" + v), "٫-3°", "numbers go through the language formatter");
 assert.equal(P.temperatureValue(21.6, "metric"), "22");
-assert.equal(P.fromSettings({automaticLocation:'true'}).automaticLocation,false);
-assert.equal(P.fromSettings(null).units,'metric');
-assert.equal(P.fromSettings([]).animations,true);
+assert.equal(read({automaticLocation:'true'}).automaticLocation,false);
+assert.equal(read(null).units,'metric');
+assert.equal(read([]).animations,true);
 const no = (key, values) => I18n.text(key, 'no', values);
 assert.equal(P.temperature(0, "imperial"), "32°")
 assert.equal(P.temperature(-40, "imperial"), "-40°")
