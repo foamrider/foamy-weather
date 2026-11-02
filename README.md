@@ -57,9 +57,14 @@ default, as the popup would refuse it.
 | `locationRefreshMinutes` | `15` | Automatic-location refresh interval, 5–1440 minutes |
 | `requestUserAgent` | `""` | User-Agent for MET Norway and OpenStreetMap requests (printable ASCII, 200 characters); empty or blank uses `foamy-weather/<version> (+repository URL)` |
 
-The searched location is stored in `~/.config/omarchy/weather-location.local.json`;
-without one, the stock weather location (`~/.local/state/omarchy/settings/weather.json`)
-is used.
+The searched location is stored, owner-only, in
+`~/.local/state/omarchy/settings/foamy-weather-location.json` (under
+`$XDG_STATE_HOME` when set); without one, the stock weather location
+(`weather.json` in the same directory) is used. Earlier versions kept it in
+`~/.config/omarchy/weather-location.local.json`: when the widget starts, a
+valid file there is copied to the new place, checked, and then removed. If
+both exist the new file wins and the old one is removed; an invalid old file is
+left alone.
 
 ## Privacy and network use
 

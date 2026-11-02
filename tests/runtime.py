@@ -1,13 +1,13 @@
 """Load the real plugin offscreen on 4.0 and 4.5 (foamy-kit harness) and check
 the shared service, leader election, lazy popup body, settings read through
-the schema and saving, report retention across a location change, and the
-sky's motion gates.
+the schema and saving, moving a legacy searched location to state, report
+retention across a location change, and the sky's motion gates.
 
   python3 tests/runtime.py [--host 4.0|4.5|both]
 
 Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit). Temporary
-HOME/XDG dirs; no location is configured and automatic location is off, so no
-helper process or network request starts.
+HOME/XDG dirs; automatic location is off and the network never settles, so
+only the location script runs (to migrate) and no network request starts.
 """
 import argparse
 import os
@@ -71,8 +71,13 @@ ShellRoot {
         shell.check(prefs.refreshMinutes === 30 && Weather.WeatherService.refreshTimer.interval === 30 * 60 * 1000
           && prefs.locationRefreshMinutes === 15, "invalid intervals read as the defaults: " + JSON.stringify(prefs))
         shell.check(Weather.WeatherService.requestUserAgent === "example-agent/1.0", "agent trimmed after the schema read")
+        // The seeded legacy file (main() below) was moved to state and read.
+        shell.check(!Weather.WeatherService.locationMigrateProc.running
+          && Weather.WeatherService.localLocationState.name === "Legacy Town"
+          && Weather.WeatherService.localLocationState.latitude === 69.65, "legacy searched location migrated and read: "
+          + JSON.stringify(Weather.WeatherService.localLocationState))
         shell.check(!a.popup.bodyItem && !b.popup.bodyItem, "popup bodies are lazy")
-        shell.check(!Weather.WeatherService.weatherProc.running && !Weather.WeatherService.locationProc.running, "no helper without a location")
+        shell.check(!Weather.WeatherService.weatherProc.running && !Weather.WeatherService.locationProc.running, "no fetch before the network settles")
         // A report for the configured coordinates, shared by every instance.
         Weather.WeatherService.localLocationState = { name: "Bergen", latitude: 60.39, longitude: 5.32 }
         var report = JSON.parse(JSON.stringify(shell.sample))
@@ -188,8 +193,17 @@ def main():
     args = parser.parse_args()
     status = 0
     for host in (["4.0", "4.5"] if args.host == "both" else [args.host]):
-        run = harness.Run(host, SHELL, plugin=ROOT, prefix="foamy-weather-runtime-").run(timeout=60)
+        run = harness.Run(host, SHELL, plugin=ROOT, prefix="foamy-weather-runtime-")
+        home = run.base / "home"
+        legacy = home / ".config/omarchy/weather-location.local.json"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text('{"name":"Legacy Town","latitude":69.65,"longitude":18.96}\n')
+        run.run(timeout=60)
         checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
+        state = home / ".local/state/omarchy/settings/foamy-weather-location.json"
+        if legacy.exists() or not state.exists() or (state.stat().st_mode & 0o777) != 0o600:
+            run.ok = False
+            print(f"{host}: the legacy location was not moved to an owner-only state file")
         if run.ok:
             print(f"{host}: {len(checks)} checks passed")
             run.cleanup()

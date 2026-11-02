@@ -28,7 +28,8 @@ QtObject {
 
   readonly property string fetchScript: localPath(Qt.resolvedUrl("scripts/weather-fetch.sh"))
   readonly property string locationResolverScript: localPath(Qt.resolvedUrl("scripts/weather-resolve-location.sh"))
-  readonly property string configRoot: (Quickshell.env("XDG_CONFIG_HOME") || Quickshell.env("HOME") + "/.config") + "/omarchy"
+  readonly property string locationScript: localPath(Qt.resolvedUrl("scripts/weather-location.sh"))
+  readonly property string settingsRoot: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/omarchy/settings"
 
   // --- report --------------------------------------------------------------------
   // The last good report. It stays while a new location loads; `report.query`
@@ -103,12 +104,20 @@ QtObject {
     if (automaticLocation) Qt.callLater(function() { root.resolveLocation(false) })
   }
 
-  onActiveChanged: if (active) reloadLocations()
+  onActiveChanged: if (active) loadLocations()
+  Component.onCompleted: if (active) loadLocations()
 
   function localPath(url) {
     var value = String(url || "")
     if (value.indexOf("file://") === 0) value = value.slice(7)
     return decodeURIComponent(value)
+  }
+
+  // The script (the only writer) first moves a searched place older versions
+  // kept in config; the files are read again once it has.
+  function loadLocations() {
+    reloadLocations()
+    if (!locationMigrateProc.running) locationMigrateProc.running = true
   }
 
   function reloadLocations() {
@@ -224,8 +233,10 @@ QtObject {
     if (automaticLocation && !loading && errorMessage !== "Showing last known weather") setError("")
   }
 
+  // The searched place (localLocationFile) first, then Omarchy's own weather
+  // location; both are state.
   property FileView locationFile: FileView {
-    path: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/omarchy/settings/weather.json"
+    path: root.settingsRoot + "/weather.json"
     watchChanges: root.active
     printErrors: false
     onFileChanged: reload()
@@ -234,7 +245,7 @@ QtObject {
   }
 
   property FileView localLocationFile: FileView {
-    path: root.configRoot + "/weather-location.local.json"
+    path: root.settingsRoot + "/foamy-weather-location.json"
     watchChanges: root.active
     printErrors: false
     onFileChanged: reload()
@@ -294,6 +305,11 @@ QtObject {
       waitForEnd: true
       onStreamFinished: root.finishWeather(text, root.weatherProc.generation, root.weatherProc.query, root.weatherProc.locationName)
     }
+  }
+
+  property Process locationMigrateProc: Process {
+    command: [root.locationScript, "--migrate"]
+    onExited: root.reloadLocations()
   }
 
   property Process locationProc: Process {

@@ -31,11 +31,14 @@ chmod +x "$mock_bin"/*
 
 export PATH="$mock_bin:$PATH"
 export XDG_CONFIG_HOME="$test_root/config"
+export XDG_STATE_HOME="$test_root/state"
 export XDG_CACHE_HOME="$test_root/cache"
 export WEATHER_LOCATION_RUNTIME_DIR="$test_root/runtime"
 export WEATHER_GEOCLUE_COMMAND="$mock_bin/where-am-i"
 export WEATHER_TEST_URLS="$test_root/urls"
-location_file="$XDG_CONFIG_HOME/omarchy/weather-location.local.json"
+location_file="$XDG_STATE_HOME/omarchy/settings/foamy-weather-location.json"
+legacy_file="$XDG_CONFIG_HOME/omarchy/weather-location.local.json"
+mkdir -p "$(dirname "$legacy_file")"
 
 "$location_writer" --set <<<'{"name":"Example","latitude":12.34,"longitude":56.78}'
 manual=$(cat "$location_file")
@@ -43,9 +46,44 @@ jq -e '
   .name == "Example"
   and .latitude == 12.34
   and .longitude == 56.78' <<<"$manual" >/dev/null || fail "manual location did not persist"
+[[ $(stat -c %a "$location_file") == 600 ]] || fail "manual location must be owner-only"
+[[ ! -e $legacy_file ]] || fail "manual location must not be written to config"
 
+printf '%s\n' '{"name":"Old","latitude":1,"longitude":2}' >"$legacy_file"
 "$location_writer" --clear
 [[ ! -e $location_file ]] || fail "manual location was not cleared"
+[[ ! -e $legacy_file ]] || fail "legacy location was not cleared"
+
+# Migration: a valid legacy file moves to state once, owner-only.
+"$location_writer" --migrate || fail "migrate without any file must succeed"
+[[ ! -e $location_file ]] || fail "migrate without a legacy file created a location"
+printf '%s\n' '{"name":"Old Town","latitude":59.91,"longitude":10.75,"extra":true}' >"$legacy_file"
+chmod 644 "$legacy_file"
+"$location_writer" --migrate || fail "migrate failed"
+jq -e '. == {name: "Old Town", latitude: 59.91, longitude: 10.75}' "$location_file" >/dev/null \
+  || fail "legacy location was not migrated"
+[[ $(stat -c %a "$location_file") == 600 ]] || fail "migrated location must be owner-only"
+[[ ! -e $legacy_file ]] || fail "legacy location was not removed after migrating"
+[[ -z $(find "$XDG_STATE_HOME/omarchy/settings" -name '.foamy-weather-location.*') ]] || fail "migrate left a temp file"
+
+# Both present: the state file wins and the legacy file goes.
+printf '%s\n' '{"name":"Stale","latitude":1,"longitude":2}' >"$legacy_file"
+"$location_writer" --migrate || fail "migrate with both files failed"
+jq -e '.name == "Old Town"' "$location_file" >/dev/null || fail "legacy location replaced the state location"
+[[ ! -e $legacy_file ]] || fail "superseded legacy location was not removed"
+
+# An invalid legacy file is left alone, and so is an unreadable state file.
+"$location_writer" --clear
+printf '%s\n' '{"name":"Broken","latitude":91,"longitude":2}' >"$legacy_file"
+"$location_writer" --migrate || fail "migrate with an invalid legacy file must succeed"
+[[ ! -e $location_file ]] || fail "invalid legacy location was migrated"
+jq -e '.name == "Broken"' "$legacy_file" >/dev/null || fail "invalid legacy location was changed"
+printf '%s\n' '{"name":"Old","latitude":1,"longitude":2}' >"$legacy_file"
+printf '%s\n' '{broken' >"$location_file"
+"$location_writer" --migrate || fail "migrate with an invalid state file must succeed"
+[[ $(cat "$location_file") == '{broken' ]] || fail "invalid state location was overwritten"
+jq -e '.name == "Old"' "$legacy_file" >/dev/null || fail "legacy location removed without a valid state location"
+"$location_writer" --clear
 
 geoclue=$("$resolver" --force)
 jq -e '

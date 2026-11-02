@@ -29,6 +29,7 @@ class PrivateLocation(unittest.TestCase):
         self.env = dict(os.environ, PATH=str(self.bin) + ':/usr/bin',
                         XDG_CACHE_HOME=str(self.base / 'cache'),
                         XDG_CONFIG_HOME=str(self.base / 'config'),
+                        XDG_STATE_HOME=str(self.base / 'state'),
                         WEATHER_LOCATION_RUNTIME_DIR=str(self.base / 'runtime'),
                         WEATHER_GEOCLUE_COMMAND=str(self.bin / 'where-am-i'),
                         WEATHER_PRIVACY_AUDIT=str(self.audit), WEATHER_PRIVACY_URLS=str(self.urls))
@@ -42,7 +43,7 @@ for pid in "$BASHPID" "$PPID"; do
   fi
 done
 '''
-        commands = ['awk', 'cat', 'chmod', 'curl', 'date', 'find', 'head', 'jq',
+        commands = ['awk', 'cat', 'chmod', 'curl', 'date', 'find', 'head', 'jq', 'ln',
                     'mkdir', 'mktemp', 'mv', 'rm', 'sha256sum', 'stat', 'timeout', 'touch']
         for command in commands:
             target = shutil.which(command, path='/usr/bin')
@@ -127,7 +128,7 @@ esac
     def test_manual_location_uses_stdin_and_rejects_invalid_input(self):
         location = {'name': 'Example\nTown', 'latitude': float(LATITUDE), 'longitude': float(LONGITUDE)}
         self.run_script('weather-location.sh', ['--set'], json.dumps(location))
-        file = self.base / 'config/omarchy/weather-location.local.json'
+        file = self.base / 'state/omarchy/settings/foamy-weather-location.json'
         self.assertEqual(json.loads(file.read_text()), location)
         self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
         for payload in ['', '{broken', '{}', json.dumps(dict(location, latitude=91)),
@@ -135,6 +136,21 @@ esac
             result = self.run_script('weather-location.sh', ['--set'], payload, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(json.loads(file.read_text()), location)
+        argv = self.audit.read_bytes().decode()
+        self.assertNotIn(LATITUDE, argv)
+        self.assertNotIn(LONGITUDE, argv)
+        self.assertNotIn('Example', argv)
+
+    def test_legacy_manual_location_migrates_privately(self):
+        location = {'name': 'Example Town', 'latitude': float(LATITUDE), 'longitude': float(LONGITUDE)}
+        legacy = self.base / 'config/omarchy/weather-location.local.json'
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text(json.dumps(location) + '\n')
+        self.run_script('weather-location.sh', ['--migrate'])
+        file = self.base / 'state/omarchy/settings/foamy-weather-location.json'
+        self.assertEqual(json.loads(file.read_text()), location)
+        self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
+        self.assertFalse(legacy.exists())
         argv = self.audit.read_bytes().decode()
         self.assertNotIn(LATITUDE, argv)
         self.assertNotIn(LONGITUDE, argv)
@@ -232,7 +248,7 @@ ShellRoot {
                                 env=env, text=True, capture_output=True, timeout=15, check=True)
         self.assertIn('PRIVATE PIPE PASS', result.stdout + result.stderr)
         self.assertIn('lat=8.765&lon=9.87', self.urls.read_text())
-        saved = json.loads((self.base / 'config/omarchy/weather-location.local.json').read_text())
+        saved = json.loads((self.base / 'state/omarchy/settings/foamy-weather-location.json').read_text())
         self.assertEqual(saved, {'name': 'Pipe Town', 'latitude': 8.7654, 'longitude': 9.8765})
         self.assert_private()
         argv = self.audit.read_text()
