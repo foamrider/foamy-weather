@@ -1,7 +1,7 @@
 """Exercise private coordinate transport and inspect actual procfs command lines.
 
-The helper runs as a process (``fakenet.helper_command``; ``FOAMY_HELPER``
-overrides it) against the loopback HTTPS stand-in in ``fakenet.py``.
+The helper runs as a process (``fakenet.helper_command``: the bundled
+binary; ``FOAMY_HELPER`` overrides it) against the loopback HTTPS stand-in in ``fakenet.py``.
 """
 import hashlib
 import json
@@ -79,12 +79,12 @@ done
         return subprocess.run(fakenet.helper_command(subcommand, *args), input=payload,
                               text=True, capture_output=True, env=self.env, timeout=15, check=check)
 
-    def assert_private(self):
+    def assert_private(self, scripts=True):
         argv = self.audit.read_bytes().decode()
         self.assertTrue(argv, 'no child process was sampled')
         for secret in [LATITUDE, LONGITUDE, '12.35', '-56.79']:
             self.assertNotIn(secret, argv)
-        if not fakenet.native():
+        if scripts and not fakenet.native():
             self.assertIn('awk', argv)
             self.assertIn('jq', argv)
 
@@ -171,6 +171,30 @@ done
             self.assertIn('error', report)
             self.assertEqual(self.server.paths(), [])
 
+    @unittest.skipUnless(fakenet.native(), 'the place search was curl in Panel.qml before the helper')
+    def test_place_search_reads_the_query_from_stdin(self):
+        request = json.dumps({'query': 'Bø i Telemark', 'language': 'no'})
+        result = self.run_helper('geocode', payload=request)
+        self.assertEqual(json.loads(result.stdout), json.loads(fakenet.SEARCH))
+        host, path, headers = self.server.log[-1]
+        self.assertEqual(host, 'geocoding-api.open-meteo.com')
+        self.assertEqual(path, '/v1/search?name=B%C3%B8%20i%20Telemark&count=5&language=no&format=json')
+        self.assertTrue(headers['User-Agent'].startswith('foamy-weather/'))
+        # An unknown language reads as English; the query never reaches argv.
+        self.run_helper('geocode', payload=json.dumps({'query': 'Oslo', 'language': 'xx-YY'}))
+        self.assertIn('language=en&', self.server.log[-1][1])
+        for reply in [{'status': 503}, {'body': 'x' * (256 * 1024 + 1)}]:
+            self.replies['search'] = reply
+            result = self.run_helper('geocode', payload=request)
+            self.assertEqual((result.returncode, json.loads(result.stdout)),
+                             (0, {'error': 'Could not search for a location'}))
+        requests = len(self.server.log)
+        for payload in ['', 'Oslo', '{"query":""}', '{"query":5}']:
+            result = self.run_helper('geocode', payload=payload)
+            self.assertEqual(json.loads(result.stdout), {'error': 'Could not search for a location'})
+        self.assertEqual(len(self.server.log), requests, 'an invalid query must not start a request')
+        self.assertEqual(self.run_helper('geocode', ['extra'], check=False).returncode, 2)
+
     def test_quickshell_sends_fresh_stdin_on_repeated_fetch_and_location_save(self):
         service = (ROOT / 'WeatherService.qml').read_text()
         panel = (ROOT / 'Panel.qml').read_text()
@@ -187,11 +211,18 @@ done
         # Use the production launch functions and write handlers, with real helpers.
         weather_started = block('onStarted:', service.index('weatherProc: Process {'))
         save_started = block('onStarted:', panel.index('id: locationSaveProc'), panel)
+        # FoamyNative.command starts `bash -c 'exec …'` from PATH: sample the
+        # argv QML built (the Bash scripts' tools are sampled as before).
+        bash = self.bin / 'bash'
+        bash.write_text((self.bin / 'cat').read_text().replace(shutil.which('cat', path='/usr/bin'), '/usr/bin/bash'))
+        bash.chmod(0o755)
         app = self.base / 'app'
         app.mkdir()
         (app / 'shell.qml').write_text('''import QtQuick
 import Quickshell
 import Quickshell.Io
+import ''' + json.dumps('file://' + str(ROOT / 'kit/FoamyNative.js')) + ''' as FoamyNative
+import ''' + json.dumps('file://' + str(ROOT / 'Model.js')) + ''' as Model
 ShellRoot {
   id: root
   property bool networkReady: true
@@ -211,8 +242,9 @@ ShellRoot {
   property var report: null
   property bool saved: false
   property int step: 0
-  property string fetchScript: ''' + json.dumps(str(ROOT / 'scripts/weather-fetch.sh')) + '''
-  property string locationScript: ''' + json.dumps(str(ROOT / 'scripts/weather-location.sh')) + '\n' +
+  property bool helperUnavailable: false
+  // The production launch: bin/$HOSTTYPE/foamy-weather-helper under this directory.
+  property string pluginDir: ''' + json.dumps(str(ROOT)) + '\n' +
             block('function setError(') + '\n' + block('function refresh(') + '\n' + block('function pickSuggestion(', 0, panel) + '''
   Process {
     id: weatherProc
@@ -259,7 +291,8 @@ ShellRoot {
         self.assertIn('lat=8.765&lon=9.87', self.urls())
         saved = json.loads((self.base / 'state/omarchy/settings/foamy-weather-location.json').read_text())
         self.assertEqual(saved, {'name': 'Pipe Town', 'latitude': 8.7654, 'longitude': 9.8765})
-        self.assert_private()
+        # QML always starts the bundled helper.
+        self.assert_private(scripts=False)
         argv = self.audit.read_text()
         self.assertNotIn('8.7654', argv)
         self.assertNotIn('9.8765', argv)

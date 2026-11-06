@@ -1,5 +1,5 @@
-// The forecast helper as a process (tests/fakenet.py: FOAMY_HELPER selects
-// it, the Bash script by default) against a loopback HTTPS stand-in for MET
+// The forecast helper as a process (tests/fakenet.py: bin/<arch>/
+// foamy-weather-helper, FOAMY_HELPER overrides it) against a loopback HTTPS stand-in for MET
 // Norway. Nothing is sent to api.met.no: the native helper connects to
 // FOAMY_WEATHER_TEST_CONNECT and trusts the throwaway CA through
 // SSL_CERT_FILE; the Bash script runs real curl with --connect-to/--cacert.
@@ -20,7 +20,7 @@ const Model = require("../Model.js");
 const exec = promisify(execFile);
 const fakenet = path.join(__dirname, "fakenet.py");
 const helper = execFileSync("python3", [fakenet, "argv", "fetch"], { encoding: "utf8" }).split("\0").slice(0, -1);
-const native = !!process.env.FOAMY_HELPER;
+const native = process.env.FOAMY_HELPER !== "bash";
 const proxyVariables = ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "no_proxy", "NO_PROXY", "SSL_CERT_DIR"];
 const forecastLimit = 2 * 1024 * 1024;
 const sunLimit = 64 * 1024;
@@ -387,4 +387,42 @@ test("https_proxy tunnels the requests through CONNECT and no_proxy bypasses it"
   await f.run(true, { https_proxy: proxy.url, no_proxy: "example.org, .met.no" });
   assert.equal(proxy.connects.length, 4, "no_proxy must bypass the proxy");
   assert.equal(f.requests.length, before + 1);
+});
+
+test("identifies the plugin to MET, caps Expires at six hours and reports local times", async t => {
+  const f = await fixture(t);
+  f.responses.forecast.headers = { Expires: new Date(Date.now() + 24 * 3600 * 1000).toUTCString() };
+  const report = await f.run();
+  assert.equal(f.forecastHeaders[0]["user-agent"], "foamy-weather/1.2.0 (+https://github.com/foamrider/foamy-weather)");
+  const [expires, lastModified] = (await fs.readFile(f.forecastPath.replace(/\.json$/, ".meta"), "utf8")).split("\n");
+  const now = Math.floor(Date.now() / 1000);
+  assert.ok(Number(expires) > now + 21500 && Number(expires) <= now + 21600, `Expires ${expires}`);
+  assert.equal(lastModified, "");
+  const mtime = Math.floor((await fs.stat(f.forecastPath)).mtimeMs / 1000);
+  assert.equal(report.fetchedAt, (await exec("date", ["-Iseconds", "-d", `@${mtime}`])).stdout.trim());
+  for (const [offset, day] of report.sun.entries())
+    assert.equal(day.date, (await exec("date", ["-d", `+${offset} day`, "+%Y-%m-%d"])).stdout.trim());
+  // A custom agent replaces the default; an Expires in the past is ignored.
+  f.responses.forecast.headers = { Expires: new Date(Date.now() - 1000).toUTCString(), "Last-Modified": "Thu, 29 Oct 2026 10:00:00 GMT" };
+  await f.run(true, { MET_WEATHER_USER_AGENT: "example-agent/1.0" });
+  assert.equal(f.forecastHeaders[1]["user-agent"], "example-agent/1.0");
+  assert.equal(await fs.readFile(f.forecastPath.replace(/\.json$/, ".meta"), "utf8"), "\nThu, 29 Oct 2026 10:00:00 GMT\n");
+});
+
+test("sun caches older than eight days are pruned after the reply", async t => {
+  const f = await fixture(t);
+  const day = 24 * 3600 * 1000;
+  const old = path.join(f.cache, "sun-old-2000-01-01.json");
+  const recent = path.join(f.cache, "sun-recent-2000-01-02.json");
+  const other = path.join(f.cache, "location-old.json");
+  for (const [file, age] of [[old, 8 * day + 60000], [recent, 7 * day], [other, 30 * day]]) {
+    await fs.writeFile(file, sun);
+    const time = new Date(Date.now() - age);
+    await fs.utimes(file, time, time);
+  }
+  await f.run();
+  const names = await fs.readdir(f.cache);
+  assert.ok(!names.includes(path.basename(old)), "an old sun cache stayed");
+  assert.ok(names.includes(path.basename(recent)), "a week-old sun cache was removed");
+  assert.ok(names.includes(path.basename(other)), "only sun caches are pruned");
 });

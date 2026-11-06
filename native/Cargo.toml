@@ -1,0 +1,23 @@
+[package]
+name = "foamy-weather-helper"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+# Kit: bounded child process (GeoClue's where-am-i), atomic writes, bounded
+# reads, the panic hook, absolute network deadlines, and HTTPS through rustls
+# with Graviola and the system trust store (`tls`).
+foamy-helper = { path = "../kit/rust/foamy-helper", features = ["tls"] }
+# MET, Nominatim and Open-Meteo replies, the location files.
+serde_json = "1"
+# openat/fstat/utimensat/linkat without following symlinks, the umask, uids.
+rustix = { version = "1.1", default-features = false, features = ["std", "fs", "process"] }
+# The cache file names (sha256 of the rounded coordinates, as sha256sum did);
+# pure Rust (Graviola's SHA-256 needs AVX2).
+sha2 = { version = "0.10", default-features = false }
+# gzip/deflate response bodies (curl --compressed); miniz_oxide, pure Rust.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# localtime_r: the local date and UTC offset `date` printed (TZ, /etc/localtime).
+libc = "0.2.153"

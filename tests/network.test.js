@@ -9,6 +9,7 @@ const sources = {
   panel: fs.readFileSync(path.join(__dirname, "../Panel.qml"), "utf8")
 };
 const Model = require("../Model.js");
+const FoamyNative = require("../kit/node-loader.cjs").load("FoamyNative");
 function controller(values, functions, file = "service") {
   const qml = sources[file];
   const context = vm.createContext(values);
@@ -37,8 +38,8 @@ function timer() {
 function fixture() {
   return controller({ networkReady: false, loading: false, retries: 0, retryTimer: timer(),
     report: {cached:true}, hasCoordinates:true, configuredLocationState:{latitude:12,longitude:34},
-    weatherProc:{running:false}, locationProc:{running:false}, fetchScript:"/fixture/fetch",
-    locationResolverScript:"/fixture/location", requestUserAgent:"", preferencesReady:true,
+    weatherProc:{running:false}, locationProc:{running:false}, pluginDir:"/fixture",
+    helperUnavailable:false, FoamyNative, requestUserAgent:"", preferencesReady:true,
     automaticLocation:true, weatherGeneration:0, locationGeneration:0, coordinateQuery:"12,34",
     configuredLocation:"Example", errorMessage:"", errorValues:[], Model,
   }, ["refresh", "resolveLocation", "scheduleRetry", "setError", "finishWeather"]);
@@ -53,7 +54,8 @@ test("forecast and location requests resume after readiness and do not overlap t
   assert.equal(c.weatherProc.running, true); assert.equal(c.locationProc.running, true);
   const command = c.weatherProc.command; c.refresh(true);
   assert.equal(c.weatherProc.command, command);
-  assert.deepEqual(Array.from(command), ["/fixture/fetch", "--force"]);
+  assert.deepEqual(Array.from(command), Array.from(FoamyNative.command("/fixture", "foamy-weather-helper", ["fetch", "--force"])));
+  assert.deepEqual(Array.from(c.locationProc.command).slice(-2), ["resolve-location", "--force"]);
   assert.equal(c.weatherProc.requestInput, "12\n34\n");
   assert.equal(c.weatherProc.stdinEnabled, true);
 });
@@ -115,14 +117,37 @@ test("a coordinate change keeps the report and restarts a running fetch", () => 
   assert.match(handler, /weatherRestart = true/);
 });
 
-test("the geocoder query goes to curl on stdin, not argv", () => {
+test("the geocoder query goes to the helper on stdin, not argv", () => {
   const panel = sources.panel;
   const proc = panel.slice(panel.indexOf("id: geocodeProc"), panel.indexOf("onStarted", panel.indexOf("id: geocodeProc")));
-  assert.match(proc, /"--config", "-"/);
-  assert.doesNotMatch(proc, /geocoding-api/);
+  assert.match(proc, /FoamyNative\.command\(root\.pluginDir, Model\.HELPER, \["geocode"\]\)/);
+  assert.doesNotMatch(proc, /geocoding-api|query/);
   const c = controller({ editingLocation:true, automaticLocation:false, geocodePendingQuery:"Bø i Telemark",
     geocodeActiveQuery:"", geocodeProc:{running:false}, geocodeLanguage:()=>"no" }, ["startGeocode"], "panel");
   c.startGeocode();
   assert.equal(c.geocodeProc.running, true); assert.equal(c.geocodeProc.stdinEnabled, true);
-  assert.match(c.geocodeProc.requestInput, /^url = "https:\/\/geocoding-api\.open-meteo\.com\/v1\/search\?name=B%C3%B8%20i%20Telemark&count=5&language=no&format=json"\n$/);
+  assert.deepEqual(JSON.parse(c.geocodeProc.requestInput), { query: "Bø i Telemark", language: "no" });
+  assert.ok(c.geocodeProc.requestInput.endsWith("\n"));
+});
+
+test("a missing helper (exit 127) is reported once and nothing retries", () => {
+  const c = controller({ networkReady: true, loading: true, retries: 0, retryTimer: timer(), locationRetryTimer: timer(),
+    helperUnavailable: false, FoamyNative, errorMessage: "", errorValues: [], dynamicLocationError: "",
+    dynamicLocationErrorValues: [], weatherProc: { running: false }, hasCoordinates: true, automaticLocation: true,
+    locationProc: { running: false }, configuredLocationState: { latitude: 12, longitude: 34 }, pluginDir: "/fixture",
+    requestUserAgent: "", weatherGeneration: 0, locationGeneration: 0, Model },
+    ["helperExited", "setError", "refresh", "resolveLocation", "finishWeather", "scheduleRetry"]);
+  assert.equal(c.helperExited(1), false);
+  assert.equal(c.helperUnavailable, false);
+  c.finishWeather("", 0, "12,34", "");
+  assert.equal(c.retryTimer.running, true);
+  assert.equal(c.helperExited(127), true);
+  assert.equal(c.retryTimer.running, false);
+  assert.equal(c.errorMessage, FoamyNative.UNAVAILABLE_TEXT);
+  assert.equal(c.dynamicLocationError, FoamyNative.UNAVAILABLE_TEXT);
+  c.refresh(true); c.resolveLocation(true);
+  assert.equal(c.weatherProc.running, false); assert.equal(c.locationProc.running, false);
+  c.finishWeather("", 0, "12,34", "");
+  assert.equal(c.retryTimer.running, false);
+  assert.equal(c.errorMessage, FoamyNative.UNAVAILABLE_TEXT);
 });

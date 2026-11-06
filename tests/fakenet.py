@@ -11,9 +11,11 @@ the real host names, so TLS is verified exactly as in production:
 - the old Bash scripts run real ``curl`` through a wrapper on ``PATH`` that
   adds ``--connect-to ::<ip>:<port>`` and ``--cacert``.
 
-``helper_command(subcommand, *args)`` is the argv of the helper under test.
-``FOAMY_HELPER`` (a JSON argv prefix, absolute paths) overrides it; the
-subcommand and its arguments follow the prefix.
+``helper_command(subcommand, *args)`` is the argv of the helper under test:
+``bin/<machine>/foamy-weather-helper`` (absolute, so it runs with any
+``PATH``). ``FOAMY_HELPER`` (a JSON argv prefix, absolute paths) overrides it;
+the subcommand and its arguments follow the prefix. ``FOAMY_HELPER=bash``
+runs the old Bash scripts instead.
 
 CLI for the node and bash tests:
 
@@ -27,6 +29,7 @@ import http.server
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import ssl
 import subprocess
@@ -46,19 +49,21 @@ PROXY_VARIABLES = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY',
 
 
 def helper_command(subcommand, *args):
-    """The helper's argv: FOAMY_HELPER + subcommand, or the Bash script."""
+    """The helper's argv: FOAMY_HELPER (or the bundled binary) + subcommand."""
     prefix = os.environ.get('FOAMY_HELPER')
+    if prefix == 'bash':
+        return [str(ROOT / SCRIPTS[subcommand]), *args]
     if prefix:
         argv = json.loads(prefix)
         if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
             raise SystemExit('FOAMY_HELPER must be a JSON list of strings')
         return [*argv, subcommand, *args]
-    return [str(ROOT / SCRIPTS[subcommand]), *args]
+    return [str(ROOT / 'bin' / platform.machine() / 'foamy-weather-helper'), subcommand, *args]
 
 
 def native():
     """True when the helper under test is not one of the Bash scripts."""
-    return bool(os.environ.get('FOAMY_HELPER'))
+    return os.environ.get('FOAMY_HELPER') != 'bash'
 
 
 def make_certs(directory):

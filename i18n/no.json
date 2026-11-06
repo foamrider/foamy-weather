@@ -117,5 +117,7 @@
   "Unknown option: %1": "Ukjent valg: %1",
   "Automatic location needs XDG_RUNTIME_DIR": "Automatisk posisjon krever XDG_RUNTIME_DIR",
   "Automatic location storage is not private": "Lagringsmappen for automatisk posisjon er ikke privat",
-  "Couldn't save the setting.": "Kunne ikke lagre innstillingen."
+  "Couldn't save the setting.": "Kunne ikke lagre innstillingen.",
+  "This plugin's helper isn't available for this CPU.": "Hjelpeprogrammet til denne utvidelsen er ikke tilgjengelig for denne prosessoren.",
+  "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)": "HTTPS støttes ikke på denne prosessoren (den mangler AES- og carry-less multiply-instruksjonene foamy-hjelpeprogrammene trenger)"
 }

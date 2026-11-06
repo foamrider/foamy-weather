@@ -1,6 +1,6 @@
 #!/bin/bash
-# The location helpers as processes: FOAMY_HELPER (a JSON argv prefix)
-# selects the helper, the Bash scripts by default (tests/fakenet.py). Network
+# The location helpers as processes: bin/<arch>/foamy-weather-helper, or the
+# JSON argv prefix in FOAMY_HELPER (tests/fakenet.py). Network
 # requests go to a loopback HTTPS stand-in, never to Nominatim.
 
 set -euo pipefail

@@ -117,5 +117,7 @@
   "Unknown option: %1": "Unknown option: %1",
   "Automatic location needs XDG_RUNTIME_DIR": "Automatic location needs XDG_RUNTIME_DIR",
   "Automatic location storage is not private": "Automatic location storage is not private",
-  "Couldn't save the setting.": "Couldn't save the setting."
+  "Couldn't save the setting.": "Couldn't save the setting.",
+  "This plugin's helper isn't available for this CPU.": "This plugin's helper isn't available for this CPU.",
+  "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)": "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)"
 }
