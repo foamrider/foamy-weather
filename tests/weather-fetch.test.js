@@ -1,8 +1,15 @@
+// The forecast helper as a process (tests/fakenet.py: FOAMY_HELPER selects
+// it, the Bash script by default) against a loopback HTTPS stand-in for MET
+// Norway. Nothing is sent to api.met.no: the native helper connects to
+// FOAMY_WEATHER_TEST_CONNECT and trusts the throwaway CA through
+// SSL_CERT_FILE; the Bash script runs real curl with --connect-to/--cacert.
 const assert = require("node:assert/strict");
-const { execFile } = require("node:child_process");
+const { execFile, execFileSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const fs = require("node:fs/promises");
 const http = require("node:http");
+const https = require("node:https");
+const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const { promisify } = require("node:util");
@@ -11,7 +18,10 @@ const test = require("node:test");
 const Model = require("../Model.js");
 
 const exec = promisify(execFile);
-const script = path.join(__dirname, "../scripts/weather-fetch.sh");
+const fakenet = path.join(__dirname, "fakenet.py");
+const helper = execFileSync("python3", [fakenet, "argv", "fetch"], { encoding: "utf8" }).split("\0").slice(0, -1);
+const native = !!process.env.FOAMY_HELPER;
+const proxyVariables = ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "no_proxy", "NO_PROXY", "SSL_CERT_DIR"];
 const forecastLimit = 2 * 1024 * 1024;
 const sunLimit = 64 * 1024;
 const forecast = JSON.stringify({
@@ -38,14 +48,23 @@ async function fixture(t) {
   const bin = path.join(root, "bin");
   await fs.mkdir(cache, { recursive: true });
   await fs.mkdir(bin);
+  const tls = path.join(root, "tls");
+  execFileSync("python3", [fakenet, "certs", tls]);
   const responses = { forecast: { body: forecast }, sun: { body: sun } };
   const requests = [];
   const forecastHeaders = [];
-  const server = http.createServer((req, res) => {
+  const server = https.createServer({
+    key: await fs.readFile(path.join(tls, "server.key")),
+    cert: await fs.readFile(path.join(tls, "server.pem"))
+  }, (req, res) => {
     const kind = req.url.includes("/locationforecast/") ? "forecast" : "sun";
     requests.push(kind);
     if (kind === "forecast") forecastHeaders.push(req.headers);
     const response = responses[kind];
+    if (response.handle) {
+      response.handle(req, res);
+      return;
+    }
     if (kind === "forecast" && response.notModified && req.headers["if-modified-since"] === response.lastModified) {
       res.statusCode = 304;
       res.end();
@@ -74,16 +93,19 @@ async function fixture(t) {
     server.closeAllConnections();
   }));
 
+  const port = server.address().port;
   const env = { ...process.env, XDG_CACHE_HOME: path.join(root, "cache"),
     PATH: `${bin}:${process.env.PATH}`, WEATHER_TEST_ROOT: root,
-    WEATHER_TEST_ORIGIN: `http://127.0.0.1:${server.address().port}`,
+    FOAMY_WEATHER_TEST_CONNECT: `127.0.0.1:${port}`, FOAMY_WEATHER_TEST_PORT: String(port),
+    SSL_CERT_FILE: path.join(tls, "ca.pem"),
     // Forced refreshes download at once unless a test asks for the minimum age.
     MET_WEATHER_FORCE_MIN_AGE: "0" };
-  // Redirect only the endpoint; the production script still runs real curl,
-  // decompression, byte limiting, jq, and cache promotion.
+  for (const name of proxyVariables) delete env[name];
+  // Only the connection is redirected: the Bash script still runs real curl
+  // (TLS, decompression), byte limiting, jq, and cache promotion. The jq and
+  // rm wrappers only observe the Bash script; the native helper runs neither.
   const wrappers = {
-    curl: `sed "s|https://api.met.no|$WEATHER_TEST_ORIGIN|g" |
-  "$WEATHER_TEST_CURL" -q --noproxy '*' "$@"
+    curl: `exec "$WEATHER_TEST_CURL" --connect-to "::127.0.0.1:$FOAMY_WEATHER_TEST_PORT" --cacert "$SSL_CERT_FILE" "$@"
 `,
     jq: `for arg in "$@"; do
   [[ -f $arg ]] || continue
@@ -109,16 +131,16 @@ exec "$WEATHER_TEST_RM" "$@"
   }
   const cacheKey = createHash("sha256").update("12.000_34.000").digest("hex");
   const forecastPath = path.join(cache, `forecast-complete-${cacheKey}.json`);
-  return { responses, requests, forecastHeaders, cache, forecastPath, env,
+  return { responses, requests, forecastHeaders, cache, forecastPath, env, port,
     async run(force = false, extraEnv = {}) {
-      const request = exec("bash", [script, ...(force ? ["--force"] : [])],
-        { env: { ...env, ...extraEnv }, timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
+      const request = exec(helper[0], [...helper.slice(1), ...(force ? ["--force"] : [])],
+        { env: { ...env, ...extraEnv }, timeout: 25000, maxBuffer: 8 * 1024 * 1024 });
       request.child.stdin.end("12\n34\n");
       const { stdout } = await request;
       assert.equal(await fs.access(path.join(root, "oversized-parse")).then(() => true, () => false), false,
         "oversized files must never reach jq");
-      const removed = await fs.readFile(path.join(root, "removed"), "utf8");
-      for (const line of removed.trim().split("\n")) {
+      const removed = await fs.readFile(path.join(root, "removed"), "utf8").catch(() => "");
+      for (const line of removed.trim().split("\n").filter(Boolean)) {
         const [size, file] = line.split("\t");
         const limit = file.includes(".forecast.") ? forecastLimit : sunLimit;
         assert.ok(Number(size) <= limit + 1, `temporary download exceeded its byte ceiling: ${line}`);
@@ -300,15 +322,69 @@ test("rounds forecast coordinates to three decimals and keeps them out of cache 
   assert.ok(names.every(name => !name.includes("12.000") && !name.includes("34.000")));
 });
 
-test("missing programs are reported with a translatable key", async t => {
+test("missing programs are reported with a translatable key", { skip: native && "the native helper runs no programs" }, async t => {
   const f = await fixture(t);
   const bin = path.join(f.cache, "..", "..", "minimal-bin");
   await fs.mkdir(bin);
   for (const name of ["bash", "jq", "date", "stat", "awk", "head", "sha256sum"]) {
     await fs.symlink((await exec("bash", ["-c", `command -v ${name}`])).stdout.trim(), path.join(bin, name));
   }
-  const request = exec(path.join(bin, "bash"), [script], { env: { ...f.env, PATH: bin } });
+  const request = exec(path.join(bin, "bash"), [helper[0]], { env: { ...f.env, PATH: bin } });
   request.child.stdin.end("12\n34\n");
   const report = JSON.parse((await request).stdout);
   assert.deepEqual(report, { error: "Missing required program: %1", values: ["curl"] });
+});
+
+test("a forecast trickled byte by byte ends at the 10 s deadline", async t => {
+  const f = await fixture(t);
+  const timers = [];
+  t.after(() => timers.forEach(clearInterval));
+  f.responses.forecast = { handle(req, res) {
+    res.writeHead(200, { "Content-Length": String(forecast.length) });
+    let sent = 0;
+    const timer = setInterval(() => {
+      if (res.destroyed || sent >= forecast.length - 1) return clearInterval(timer);
+      res.write(forecast[sent++]);
+    }, 200);
+    timers.push(timer);
+  } };
+  const started = Date.now();
+  const report = await f.run();
+  const elapsed = Date.now() - started;
+  assert.deepEqual(report, { error: "Weather data is unavailable", values: [] });
+  assert.ok(elapsed >= 9000 && elapsed < 14000, `took ${elapsed} ms`);
+  assert.deepEqual(await files(f.cache), []);
+});
+
+async function connectProxy(t, port) {
+  const connects = [];
+  const proxy = http.createServer((req, res) => { res.statusCode = 405; res.end(); });
+  proxy.on("connect", (req, socket, head) => {
+    connects.push({ target: req.url, authorization: req.headers["proxy-authorization"] || "" });
+    // Every tunnel ends at the loopback stand-in, whatever the target.
+    const upstream = net.connect(port, "127.0.0.1", () => {
+      socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      upstream.write(head);
+      upstream.pipe(socket);
+      socket.pipe(upstream);
+    });
+    upstream.on("error", () => socket.destroy());
+    socket.on("error", () => upstream.destroy());
+  });
+  await new Promise(resolve => proxy.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => { proxy.close(resolve); proxy.closeAllConnections(); }));
+  return { connects, url: `http://127.0.0.1:${proxy.address().port}` };
+}
+
+test("https_proxy tunnels the requests through CONNECT and no_proxy bypasses it", async t => {
+  const f = await fixture(t);
+  const proxy = await connectProxy(t, f.port);
+  const report = await f.run(true, { https_proxy: proxy.url });
+  assert.equal(report.stale, false);
+  assert.equal(report.sun.length, 3);
+  assert.equal(proxy.connects.length, 4);
+  const before = f.requests.length;
+  await f.run(true, { https_proxy: proxy.url, no_proxy: "example.org, .met.no" });
+  assert.equal(proxy.connects.length, 4, "no_proxy must bypass the proxy");
+  assert.equal(f.requests.length, before + 1);
 });

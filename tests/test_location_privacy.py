@@ -1,4 +1,8 @@
-"""Exercise private coordinate transport and inspect actual procfs command lines."""
+"""Exercise private coordinate transport and inspect actual procfs command lines.
+
+The helper runs as a process (``fakenet.helper_command``; ``FOAMY_HELPER``
+overrides it) against the loopback HTTPS stand-in in ``fakenet.py``.
+"""
 import hashlib
 import json
 import os
@@ -6,11 +10,14 @@ from pathlib import Path
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fakenet  # noqa: E402
 LATITUDE, LONGITUDE = '12.3456', '-56.7890'
 FORECAST = '{"type":"Feature","properties":{"timeseries":[{"time":"2026-10-09T10:00:00Z","data":{}}]}}'
 SUN = '{"properties":{"sunrise":{"time":"2026-10-09T06:00:00Z"},"sunset":{"time":"2026-10-09T18:00:00Z"}}}'
@@ -25,14 +32,18 @@ class PrivateLocation(unittest.TestCase):
         self.bin.mkdir()
         self.audit = self.base / 'argv'
         self.audit.touch()
-        self.urls = self.base / 'urls'
-        self.env = dict(os.environ, PATH=str(self.bin) + ':/usr/bin',
-                        XDG_CACHE_HOME=str(self.base / 'cache'),
-                        XDG_CONFIG_HOME=str(self.base / 'config'),
-                        XDG_STATE_HOME=str(self.base / 'state'),
-                        WEATHER_LOCATION_RUNTIME_DIR=str(self.base / 'runtime'),
-                        WEATHER_GEOCLUE_COMMAND=str(self.bin / 'where-am-i'),
-                        WEATHER_PRIVACY_AUDIT=str(self.audit), WEATHER_PRIVACY_URLS=str(self.urls))
+        certs = fakenet.make_certs(self.base / 'tls')
+        self.replies = {}
+        self.server = fakenet.Server(certs, self.replies).__enter__()
+        self.addCleanup(self.server.__exit__)
+        self.env = fakenet.network_env(dict(os.environ, PATH=str(self.bin) + ':/usr/bin',
+                                            XDG_CACHE_HOME=str(self.base / 'cache'),
+                                            XDG_CONFIG_HOME=str(self.base / 'config'),
+                                            XDG_STATE_HOME=str(self.base / 'state'),
+                                            WEATHER_LOCATION_RUNTIME_DIR=str(self.base / 'runtime'),
+                                            WEATHER_GEOCLUE_COMMAND=str(self.bin / 'where-am-i'),
+                                            WEATHER_PRIVACY_AUDIT=str(self.audit)),
+                                       self.server.port, certs['ca'])
         # Sample the actual helper process and its caller before exec forwards argv.
         prefix = '''#!/bin/bash
 set -euo pipefail
@@ -49,50 +60,49 @@ done
             target = shutil.which(command, path='/usr/bin')
             self.assertIsNotNone(target)
             if command == 'curl':
-                body = '''IFS= read -r config
-printf '%s\\n' "$config" >>"$WEATHER_PRIVACY_URLS"
-case "$config" in
-  *locationforecast*) printf '%s\\n' ''' + repr(FORECAST) + ''' ;;
-  *sunrise*) printf '%s\\n' ''' + repr(SUN) + ''' ;;
-  *) printf '%s\\n' "${WEATHER_PRIVACY_LABEL_RESPONSE:-{}}" ;;
-esac
-'''
-            else:
-                body = 'exec ' + target + ' "$@"\n'
+                # Real curl, pointed at the loopback server (Bash scripts only).
+                fakenet.write_curl_wrapper(self.bin, target, prefix[len('#!/bin/bash\n'):])
+                continue
             file = self.bin / command
-            file.write_text(prefix + body)
+            file.write_text(prefix + 'exec ' + target + ' "$@"\n')
             file.chmod(0o755)
+        # The GeoClue demo samples its caller (the helper) too.
         geoclue = self.bin / 'where-am-i'
-        geoclue.write_text('#!/bin/bash\nprintf "%s\\n" "Latitude: ' + LATITUDE +
+        geoclue.write_text(prefix + 'printf "%s\\n" "Latitude: ' + LATITUDE +
                            '°" "Longitude: ' + LONGITUDE + '°"\n')
         geoclue.chmod(0o755)
 
-    def run_script(self, name, args=(), payload='', check=True):
-        return subprocess.run([str(ROOT / 'scripts' / name), *args], input=payload,
+    def urls(self):
+        return '\n'.join(self.server.paths())
+
+    def run_helper(self, subcommand, args=(), payload='', check=True):
+        return subprocess.run(fakenet.helper_command(subcommand, *args), input=payload,
                               text=True, capture_output=True, env=self.env, timeout=15, check=check)
 
     def assert_private(self):
         argv = self.audit.read_bytes().decode()
+        self.assertTrue(argv, 'no child process was sampled')
         for secret in [LATITUDE, LONGITUDE, '12.35', '-56.79']:
             self.assertNotIn(secret, argv)
-        self.assertIn('awk', argv)
-        self.assertIn('jq', argv)
+        if not fakenet.native():
+            self.assertIn('awk', argv)
+            self.assertIn('jq', argv)
 
     def test_automatic_location_and_forecast_keep_coordinates_out_of_procfs(self):
         # The no-name response forces the coordinate-label fallback through jq too.
-        location = json.loads(self.run_script('weather-resolve-location.sh', ['--force']).stdout)
+        location = json.loads(self.run_helper('resolve-location', ['--force']).stdout)
         # Automatic positions are rounded to about 1 km before anything uses them.
         self.assertEqual(location['latitude'], 12.35)
         self.assertEqual(location['longitude'], -56.79)
         self.assertEqual(location['name'], '12.35, -56.79')
-        report = json.loads(self.run_script('weather-fetch.sh', ['--force'],
+        report = json.loads(self.run_helper('fetch', ['--force'],
                                            LATITUDE + '\n' + LONGITUDE + '\n').stdout)
         self.assertFalse(report['stale'])
         self.assertEqual(len(report['sun']), 3)
         # MET gets three decimals (about 100 m), Nominatim the rounded position.
-        self.assertIn('lat=12.346&lon=-56.789', self.urls.read_text())
-        self.assertIn('reverse?format=jsonv2&lat=12.35&lon=-56.79&', self.urls.read_text())
-        self.assertNotIn('12.3456', self.urls.read_text())
+        self.assertIn('lat=12.346&lon=-56.789', self.urls())
+        self.assertIn('reverse?format=jsonv2&lat=12.35&lon=-56.79&', self.urls())
+        self.assertNotIn('12.3456', self.urls())
         self.assert_private()
         for root in [self.base / 'cache/omarchy-weather', self.base / 'runtime']:
             self.assertEqual(stat.S_IMODE(root.stat().st_mode), 0o700)
@@ -110,12 +120,11 @@ esac
         old_forecast.write_text(FORECAST)
         old_time = int(time.time()) - 3600
         os.utime(old_forecast, (old_time, old_time))
-        location = json.loads(self.run_script('weather-resolve-location.sh', ['--force']).stdout)
+        location = json.loads(self.run_helper('resolve-location', ['--force']).stdout)
         self.assertEqual(location['name'], 'Old Town')
         # Failed refreshes must still use the migrated forecast as stale data.
-        curl = self.bin / 'curl'
-        curl.write_text(curl.read_text().split('IFS= read -r config')[0] + 'exit 22\n')
-        report = json.loads(self.run_script('weather-fetch.sh', ['--force'],
+        self.replies.update(forecast={'status': 503}, sun={'status': 503})
+        report = json.loads(self.run_helper('fetch', ['--force'],
                                            LATITUDE + '\n' + LONGITUDE + '\n').stdout)
         self.assertTrue(report['stale'])
         # Migrated into the opaque name of the three-decimal request key.
@@ -127,13 +136,13 @@ esac
 
     def test_manual_location_uses_stdin_and_rejects_invalid_input(self):
         location = {'name': 'Example\nTown', 'latitude': float(LATITUDE), 'longitude': float(LONGITUDE)}
-        self.run_script('weather-location.sh', ['--set'], json.dumps(location))
+        self.run_helper('location', ['--set'], json.dumps(location))
         file = self.base / 'state/omarchy/settings/foamy-weather-location.json'
         self.assertEqual(json.loads(file.read_text()), location)
         self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
         for payload in ['', '{broken', '{}', json.dumps(dict(location, latitude=91)),
                         json.dumps(location) + '\n' + json.dumps(location)]:
-            result = self.run_script('weather-location.sh', ['--set'], payload, check=False)
+            result = self.run_helper('location', ['--set'], payload, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(json.loads(file.read_text()), location)
         argv = self.audit.read_bytes().decode()
@@ -146,7 +155,7 @@ esac
         legacy = self.base / 'config/omarchy/weather-location.local.json'
         legacy.parent.mkdir(parents=True)
         legacy.write_text(json.dumps(location) + '\n')
-        self.run_script('weather-location.sh', ['--migrate'])
+        self.run_helper('location', ['--migrate'])
         file = self.base / 'state/omarchy/settings/foamy-weather-location.json'
         self.assertEqual(json.loads(file.read_text()), location)
         self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
@@ -158,9 +167,9 @@ esac
 
     def test_invalid_forecast_coordinates_do_not_start_a_download(self):
         for payload in ['', '12.3456\n', '91\n0\n', '12;echo exposed\n34\n']:
-            report = json.loads(self.run_script('weather-fetch.sh', payload=payload).stdout)
+            report = json.loads(self.run_helper('fetch', payload=payload).stdout)
             self.assertIn('error', report)
-            self.assertFalse(self.urls.exists())
+            self.assertEqual(self.server.paths(), [])
 
     def test_quickshell_sends_fresh_stdin_on_repeated_fetch_and_location_save(self):
         service = (ROOT / 'WeatherService.qml').read_text()
@@ -247,7 +256,7 @@ ShellRoot {
         result = subprocess.run(['dbus-run-session', '--', '/usr/bin/qs', '-p', str(app), '--no-color'],
                                 env=env, text=True, capture_output=True, timeout=15, check=True)
         self.assertIn('PRIVATE PIPE PASS', result.stdout + result.stderr)
-        self.assertIn('lat=8.765&lon=9.87', self.urls.read_text())
+        self.assertIn('lat=8.765&lon=9.87', self.urls())
         saved = json.loads((self.base / 'state/omarchy/settings/foamy-weather-location.json').read_text())
         self.assertEqual(saved, {'name': 'Pipe Town', 'latitude': 8.7654, 'longitude': 9.8765})
         self.assert_private()
