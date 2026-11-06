@@ -6,10 +6,18 @@ Current weather and a three-day forecast.
 
 ## Install
 
-Requires Omarchy 4.5 (it also loads on 4.0, in English), Bash, `curl`, `jq`,
-`awk`, GNU coreutils, and `wl-paste` (wl-clipboard). Internet access is
-required for forecasts and location search. For automatic location, install
-GeoClue (`geoclue`). Disable another weather widget before enabling this one.
+Requires Omarchy 4.5 (it also loads on 4.0, in English), Bash, and, for
+pasting into the location search, `jq`, GNU coreutils and `wl-paste`
+(wl-clipboard). Forecasts, location search and place names come from the
+plugin's bundled helper, `bin/<arch>/foamy-weather-helper` (static binaries for
+x86-64 and AArch64 Linux; no `curl`, Python or other runtime). Its HTTPS needs a
+CPU with AES and carry-less multiplication instructions (on x86-64 also AVX2,
+BMI2 and ADX: Intel Broadwell, AMD Zen or newer; on AArch64 the ARMv8 crypto
+extensions, so not a Raspberry Pi 4); without them the widget says so instead
+of loading weather. Internet access is required for forecasts and location
+search; `https_proxy`/`all_proxy` (HTTP proxies) and `no_proxy` are honoured.
+For automatic location, install GeoClue (`geoclue`; its `where-am-i` demo is
+used). Disable another weather widget before enabling this one.
 
 ```sh
 omarchy plugin add https://github.com/foamrider/foamy-weather.git --enable
@@ -72,7 +80,7 @@ left alone.
   used, cached or sent anywhere. OpenStreetMap's Nominatim receives only that
   rounded position, at most once per new place per week, to name it.
 - MET Norway receives coordinates rounded to three decimals (about 100 m).
-- Coordinates and searched place names reach `curl` through stdin, never
+- Coordinates and searched place names reach the helper through stdin, never
   process arguments. Cache names use opaque hashes; caches are owner-only.
   The current automatic position is kept in `$XDG_RUNTIME_DIR` only; without
   a private runtime directory automatic location reports an error instead of
@@ -82,10 +90,12 @@ left alone.
   forced refresh (middle-click, the refresh button) waits at least 60 seconds
   between downloads. Requests identify the plugin with a User-Agent.
 - Forecast responses are limited to 2 MiB and each sunrise response to 64 KiB
-  after decompression; invalid or oversized responses are rejected and a
-  valid cached forecast stays available. Requests wait briefly after the
-  network connects and retry temporary failures up to three times with
-  increasing delays.
+  after decompression (place names and search results to 256 KiB); invalid
+  or oversized responses are rejected and a valid cached forecast stays
+  available. Each request has a fixed deadline (3 seconds to connect; 10
+  seconds for a forecast, 8 for sunrise or a place name, 5 for a search).
+  Requests wait briefly after the network connects and retry temporary
+  failures up to three times with increasing delays.
 - One shell runs one set of requests and timers, however many monitors show
   the bar.
 - Location-search paste is limited to 16 KiB and two seconds.
@@ -125,10 +135,31 @@ plugin in English.
 
 `kit/` holds shared components copied from [foamy-kit](https://github.com/foamrider/foamy-kit); edit them there, not here.
 
+The helper's source is `native/` (Rust; its contract is the doc comment at the
+top of `native/src/main.rs`). Rebuild both binaries and `native/native.pin`
+with foamy-kit's build tool after any change there, in `kit/rust/` or in
+`Cargo.lock`, and commit them together:
+
+```sh
+export CARGO_TARGET_DIR=~/.cache/foamy-native/foamy-weather   # never inside the plugin
+~/GitHub/Personal/foamy-kit/tools/build-native.sh . --test    # fmt, clippy, unit tests
+~/GitHub/Personal/foamy-kit/tools/build-native.sh .           # bin/x86_64, bin/aarch64, native.pin
+~/GitHub/Personal/foamy-kit/tools/build-native.sh . --verify  # clean rebuild, byte-identical
+```
+
+The tests (Python 3, Node, `openssl` and qemu-user for AArch64; development
+only) run the helper as a process, `bin/<arch>/foamy-weather-helper` or the
+JSON argv prefix in `FOAMY_HELPER`, against a loopback HTTPS stand-in for MET
+Norway, Nominatim and Open-Meteo with a throwaway CA (`tests/fakenet.py`; the
+helper's test-only `FOAMY_WEATHER_TEST_CONNECT` and `SSL_CERT_FILE`). Nothing
+is sent to the real services, and all files go to temporary HOME/XDG
+directories.
+
 ```sh
 for t in tests/*.test.js tests/i18n.test.cjs; do node "$t"; done
 python3 -m unittest tests.test_clipboard tests.test_location_privacy
 bash tests/test-weather-location.sh
+FOAMY_HELPER="[\"$PWD/bin/aarch64/foamy-weather-helper\"]" node tests/weather-fetch.test.js   # and the two above
 bash tests/kit-check.sh
 python3 tests/i18n-runtime.py                  # OMARCHY_PATH=<4.5 tree> for 4.5
 python3 tests/runtime.py                       # needs foamy-kit (FOAMY_KIT)

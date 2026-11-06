@@ -1,3 +1,9 @@
+// The bundled helper, bin/<arch>/foamy-weather-helper (kit/FoamyNative.js).
+var HELPER = "foamy-weather-helper"
+// The helper's error key on a CPU without the instructions its HTTPS needs
+// (foamy-helper's tls::UNSUPPORTED).
+var HTTPS_UNSUPPORTED = "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)"
+
 function trimmed(value) {
   return String(value === undefined || value === null ? "" : value).replace(/^\s+|\s+$/g, "")
 }
@@ -354,6 +360,8 @@ function formatIsoTime(value) {
 
 if (typeof module !== "undefined") {
   module.exports = {
+    HELPER: HELPER,
+    HTTPS_UNSUPPORTED: HTTPS_UNSUPPORTED,
     parseLocationFile: parseLocationFile,
     parseResolvedLocation: parseResolvedLocation,
     parseGeocodingResults: parseGeocodingResults,

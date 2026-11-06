@@ -113,9 +113,10 @@
   "Shown as a still image while animations are off.": "Shown as a still image while animations are off.",
   "Updated %1": "Updated %1",
   "Weather in %1": "Weather in %1",
-  "Missing required program: %1": "Missing required program: %1",
   "Unknown option: %1": "Unknown option: %1",
   "Automatic location needs XDG_RUNTIME_DIR": "Automatic location needs XDG_RUNTIME_DIR",
   "Automatic location storage is not private": "Automatic location storage is not private",
-  "Couldn't save the setting.": "Couldn't save the setting."
+  "Couldn't save the setting.": "Couldn't save the setting.",
+  "This plugin's helper isn't available for this CPU.": "This plugin's helper isn't available for this CPU.",
+  "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)": "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)"
 }

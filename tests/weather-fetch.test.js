@@ -1,8 +1,15 @@
+// The forecast helper as a process (tests/fakenet.py: bin/<arch>/
+// foamy-weather-helper, FOAMY_HELPER overrides it) against a loopback HTTPS
+// stand-in for MET Norway. Nothing is sent to api.met.no: the helper connects
+// to FOAMY_WEATHER_TEST_CONNECT and trusts the throwaway CA through
+// SSL_CERT_FILE.
 const assert = require("node:assert/strict");
-const { execFile } = require("node:child_process");
+const { execFile, execFileSync, spawn } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const fs = require("node:fs/promises");
 const http = require("node:http");
+const https = require("node:https");
+const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const { promisify } = require("node:util");
@@ -11,7 +18,9 @@ const test = require("node:test");
 const Model = require("../Model.js");
 
 const exec = promisify(execFile);
-const script = path.join(__dirname, "../scripts/weather-fetch.sh");
+const fakenet = path.join(__dirname, "fakenet.py");
+const helper = execFileSync("python3", [fakenet, "argv", "fetch"], { encoding: "utf8" }).split("\0").slice(0, -1);
+const proxyVariables = ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "no_proxy", "NO_PROXY", "SSL_CERT_DIR"];
 const forecastLimit = 2 * 1024 * 1024;
 const sunLimit = 64 * 1024;
 const forecast = JSON.stringify({
@@ -35,17 +44,24 @@ async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "weather-fetch-test-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const cache = path.join(root, "cache/omarchy-weather");
-  const bin = path.join(root, "bin");
   await fs.mkdir(cache, { recursive: true });
-  await fs.mkdir(bin);
+  const tls = path.join(root, "tls");
+  execFileSync("python3", [fakenet, "certs", tls]);
   const responses = { forecast: { body: forecast }, sun: { body: sun } };
   const requests = [];
   const forecastHeaders = [];
-  const server = http.createServer((req, res) => {
+  const server = https.createServer({
+    key: await fs.readFile(path.join(tls, "server.key")),
+    cert: await fs.readFile(path.join(tls, "server.pem"))
+  }, (req, res) => {
     const kind = req.url.includes("/locationforecast/") ? "forecast" : "sun";
     requests.push(kind);
     if (kind === "forecast") forecastHeaders.push(req.headers);
     const response = responses[kind];
+    if (response.handle) {
+      response.handle(req, res);
+      return;
+    }
     if (kind === "forecast" && response.notModified && req.headers["if-modified-since"] === response.lastModified) {
       res.statusCode = 304;
       res.end();
@@ -74,55 +90,21 @@ async function fixture(t) {
     server.closeAllConnections();
   }));
 
+  const port = server.address().port;
   const env = { ...process.env, XDG_CACHE_HOME: path.join(root, "cache"),
-    PATH: `${bin}:${process.env.PATH}`, WEATHER_TEST_ROOT: root,
-    WEATHER_TEST_ORIGIN: `http://127.0.0.1:${server.address().port}`,
+    FOAMY_WEATHER_TEST_CONNECT: `127.0.0.1:${port}`,
+    SSL_CERT_FILE: path.join(tls, "ca.pem"),
     // Forced refreshes download at once unless a test asks for the minimum age.
     MET_WEATHER_FORCE_MIN_AGE: "0" };
-  // Redirect only the endpoint; the production script still runs real curl,
-  // decompression, byte limiting, jq, and cache promotion.
-  const wrappers = {
-    curl: `sed "s|https://api.met.no|$WEATHER_TEST_ORIGIN|g" |
-  "$WEATHER_TEST_CURL" -q --noproxy '*' "$@"
-`,
-    jq: `for arg in "$@"; do
-  [[ -f $arg ]] || continue
-  case "$arg" in *forecast*) limit=${forecastLimit} ;; *sun*) limit=${sunLimit} ;; *) continue ;; esac
-  if (( $(stat -c %s -- "$arg") > limit )); then
-    printf '%s\\n' "$arg" >>"$WEATHER_TEST_ROOT/oversized-parse"
-    exit 99
-  fi
-done
-exec "$WEATHER_TEST_JQ" "$@"
-`,
-    rm: `# Record temporary file sizes before the production EXIT trap removes them.
-for arg in "$@"; do
-  [[ -f $arg ]] || continue
-  printf '%s\\t%s\\n' "$(stat -c %s -- "$arg")" "$arg" >>"$WEATHER_TEST_ROOT/removed"
-done
-exec "$WEATHER_TEST_RM" "$@"
-`
-  };
-  for (const [name, body] of Object.entries(wrappers)) {
-    env[`WEATHER_TEST_${name.toUpperCase()}`] = (await exec("bash", ["-c", `command -v ${name}`])).stdout.trim();
-    await fs.writeFile(path.join(bin, name), `#!/bin/bash\nset -euo pipefail\n${body}`, { mode: 0o755 });
-  }
+  for (const name of proxyVariables) delete env[name];
   const cacheKey = createHash("sha256").update("12.000_34.000").digest("hex");
   const forecastPath = path.join(cache, `forecast-complete-${cacheKey}.json`);
-  return { responses, requests, forecastHeaders, cache, forecastPath, env,
+  return { responses, requests, forecastHeaders, cache, forecastPath, env, port,
     async run(force = false, extraEnv = {}) {
-      const request = exec("bash", [script, ...(force ? ["--force"] : [])],
-        { env: { ...env, ...extraEnv }, timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
+      const request = exec(helper[0], [...helper.slice(1), ...(force ? ["--force"] : [])],
+        { env: { ...env, ...extraEnv }, timeout: 25000, maxBuffer: 8 * 1024 * 1024 });
       request.child.stdin.end("12\n34\n");
       const { stdout } = await request;
-      assert.equal(await fs.access(path.join(root, "oversized-parse")).then(() => true, () => false), false,
-        "oversized files must never reach jq");
-      const removed = await fs.readFile(path.join(root, "removed"), "utf8");
-      for (const line of removed.trim().split("\n")) {
-        const [size, file] = line.split("\t");
-        const limit = file.includes(".forecast.") ? forecastLimit : sunLimit;
-        assert.ok(Number(size) <= limit + 1, `temporary download exceeded its byte ceiling: ${line}`);
-      }
       assert.equal((await fs.readdir(cache)).some(name => name.startsWith(".")), false,
         "temporary files must be cleaned up");
       return JSON.parse(stdout);
@@ -272,6 +254,64 @@ test("honours MET Expires, revalidates with If-Modified-Since and spaces forced 
   assert.equal(f.forecastHeaders[2]["if-modified-since"], lastModified);
 });
 
+test("a 304 carrying Content-Encoding renews the cache without decoding", async t => {
+  const f = await fixture(t);
+  const lastModified = "Thu, 29 Oct 2026 10:00:00 GMT";
+  f.responses.forecast.headers = { "Last-Modified": lastModified };
+  assert.equal((await f.run()).stale, false);
+  const metaPath = f.forecastPath.replace(/\.json$/, ".meta");
+  const old = new Date(Date.now() - 7200 * 1000);
+  await fs.utimes(f.forecastPath, old, old);
+  await fs.writeFile(metaPath, `${Math.floor(Date.now() / 1000) - 10}\n${lastModified}\n`);
+  const expires = Math.floor(Date.now() / 1000) + 1800;
+  // Content-Encoding (and Content-Length) describe the representation; a 304 has no body.
+  f.responses.forecast = { handle(req, res) {
+    assert.equal(req.headers["if-modified-since"], lastModified);
+    res.writeHead(304, { "Content-Encoding": "gzip", "Content-Length": "1234",
+      Expires: new Date(expires * 1000).toUTCString(), "Last-Modified": lastModified });
+    res.end();
+  } };
+  const report = await f.run();
+  assert.equal(report.stale, false);
+  assert.ok(Date.now() - (await fs.stat(f.forecastPath)).mtimeMs < 60000, "a 304 refreshes the cache age");
+  assert.equal(await fs.readFile(metaPath, "utf8"), `${expires}\n${lastModified}\n`);
+  assert.equal(Model.currentCondition(Model.parseBundle(JSON.stringify(report))).temperature, 12);
+});
+
+test("an empty 200 with Content-Encoding is an empty body, as with curl, and a failed refresh", async t => {
+  const f = await fixture(t);
+  assert.equal((await f.run()).stale, false);
+  const cached = await fs.readFile(f.forecastPath, "utf8");
+  for (const headers of [{ "Content-Length": "0" }, { "Transfer-Encoding": "chunked" }]) {
+    f.responses.forecast = { handle(req, res) {
+      res.writeHead(200, { "Content-Encoding": "gzip", ...headers });
+      res.end();
+    } };
+    assert.equal((await f.run(true)).stale, true);
+    assert.equal(await fs.readFile(f.forecastPath, "utf8"), cached);
+  }
+});
+
+test("an address that drops connection attempts costs one Happy Eyeballs delay, not the budget", async t => {
+  const f = await fixture(t);
+  const blackhole = spawn("python3", [fakenet, "blackhole"], { stdio: ["pipe", "pipe", "inherit"] });
+  t.after(() => blackhole.kill());
+  const port = await new Promise((resolve, reject) => {
+    blackhole.once("error", reject);
+    blackhole.stdout.once("data", data => resolve(Number(String(data).trim())));
+  });
+  assert.ok(port > 0);
+  const started = Date.now();
+  const report = await f.run(false, { FOAMY_WEATHER_TEST_CONNECT: `127.0.0.1:${port},127.0.0.1:${f.port}` });
+  const elapsed = Date.now() - started;
+  assert.equal(report.stale, false);
+  assert.ok(report.sun.every(day => day.sunrise && day.sunset));
+  assert.equal(f.requests.length, 4);
+  // Four requests, each 200 ms behind the dropped address; one request's
+  // connect budget is 3 s, which the old serial connect spent on the first.
+  assert.ok(elapsed < 3000, `took ${elapsed} ms`);
+});
+
 test("migrates 1.1 caches hashed from four-decimal coordinates", async t => {
   const f = await fixture(t);
   const oldKey = createHash("sha256").update("12.0000_34.0000").digest("hex");
@@ -300,15 +340,101 @@ test("rounds forecast coordinates to three decimals and keeps them out of cache 
   assert.ok(names.every(name => !name.includes("12.000") && !name.includes("34.000")));
 });
 
-test("missing programs are reported with a translatable key", async t => {
+test("the forecast needs no other program", async t => {
   const f = await fixture(t);
-  const bin = path.join(f.cache, "..", "..", "minimal-bin");
-  await fs.mkdir(bin);
-  for (const name of ["bash", "jq", "date", "stat", "awk", "head", "sha256sum"]) {
-    await fs.symlink((await exec("bash", ["-c", `command -v ${name}`])).stdout.trim(), path.join(bin, name));
+  const report = await f.run(false, { PATH: "" });
+  assert.equal(report.stale, false);
+  assert.ok(report.sun.every(day => day.sunrise && day.sunset));
+});
+
+test("a forecast trickled byte by byte ends at the 10 s deadline", async t => {
+  const f = await fixture(t);
+  const timers = [];
+  t.after(() => timers.forEach(clearInterval));
+  f.responses.forecast = { handle(req, res) {
+    res.writeHead(200, { "Content-Length": String(forecast.length) });
+    let sent = 0;
+    const timer = setInterval(() => {
+      if (res.destroyed || sent >= forecast.length - 1) return clearInterval(timer);
+      res.write(forecast[sent++]);
+    }, 200);
+    timers.push(timer);
+  } };
+  const started = Date.now();
+  const report = await f.run();
+  const elapsed = Date.now() - started;
+  assert.deepEqual(report, { error: "Weather data is unavailable", values: [] });
+  assert.ok(elapsed >= 9000 && elapsed < 14000, `took ${elapsed} ms`);
+  assert.deepEqual(await files(f.cache), []);
+});
+
+async function connectProxy(t, port) {
+  const connects = [];
+  const proxy = http.createServer((req, res) => { res.statusCode = 405; res.end(); });
+  proxy.on("connect", (req, socket, head) => {
+    connects.push({ target: req.url, authorization: req.headers["proxy-authorization"] || "" });
+    // Every tunnel ends at the loopback stand-in, whatever the target.
+    const upstream = net.connect(port, "127.0.0.1", () => {
+      socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      upstream.write(head);
+      upstream.pipe(socket);
+      socket.pipe(upstream);
+    });
+    upstream.on("error", () => socket.destroy());
+    socket.on("error", () => upstream.destroy());
+  });
+  await new Promise(resolve => proxy.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => { proxy.close(resolve); proxy.closeAllConnections(); }));
+  return { connects, url: `http://127.0.0.1:${proxy.address().port}` };
+}
+
+test("https_proxy tunnels the requests through CONNECT and no_proxy bypasses it", async t => {
+  const f = await fixture(t);
+  const proxy = await connectProxy(t, f.port);
+  const report = await f.run(true, { https_proxy: proxy.url });
+  assert.equal(report.stale, false);
+  assert.equal(report.sun.length, 3);
+  assert.equal(proxy.connects.length, 4);
+  const before = f.requests.length;
+  await f.run(true, { https_proxy: proxy.url, no_proxy: "example.org, .met.no" });
+  assert.equal(proxy.connects.length, 4, "no_proxy must bypass the proxy");
+  assert.equal(f.requests.length, before + 1);
+});
+
+test("identifies the plugin to MET, caps Expires at six hours and reports local times", async t => {
+  const f = await fixture(t);
+  f.responses.forecast.headers = { Expires: new Date(Date.now() + 24 * 3600 * 1000).toUTCString() };
+  const report = await f.run();
+  assert.equal(f.forecastHeaders[0]["user-agent"], "foamy-weather/1.2.0 (+https://github.com/foamrider/foamy-weather)");
+  const [expires, lastModified] = (await fs.readFile(f.forecastPath.replace(/\.json$/, ".meta"), "utf8")).split("\n");
+  const now = Math.floor(Date.now() / 1000);
+  assert.ok(Number(expires) > now + 21500 && Number(expires) <= now + 21600, `Expires ${expires}`);
+  assert.equal(lastModified, "");
+  const mtime = Math.floor((await fs.stat(f.forecastPath)).mtimeMs / 1000);
+  assert.equal(report.fetchedAt, (await exec("date", ["-Iseconds", "-d", `@${mtime}`])).stdout.trim());
+  for (const [offset, day] of report.sun.entries())
+    assert.equal(day.date, (await exec("date", ["-d", `+${offset} day`, "+%Y-%m-%d"])).stdout.trim());
+  // A custom agent replaces the default; an Expires in the past is ignored.
+  f.responses.forecast.headers = { Expires: new Date(Date.now() - 1000).toUTCString(), "Last-Modified": "Thu, 29 Oct 2026 10:00:00 GMT" };
+  await f.run(true, { MET_WEATHER_USER_AGENT: "example-agent/1.0" });
+  assert.equal(f.forecastHeaders[1]["user-agent"], "example-agent/1.0");
+  assert.equal(await fs.readFile(f.forecastPath.replace(/\.json$/, ".meta"), "utf8"), "\nThu, 29 Oct 2026 10:00:00 GMT\n");
+});
+
+test("sun caches older than eight days are pruned after the reply", async t => {
+  const f = await fixture(t);
+  const day = 24 * 3600 * 1000;
+  const old = path.join(f.cache, "sun-old-2000-01-01.json");
+  const recent = path.join(f.cache, "sun-recent-2000-01-02.json");
+  const other = path.join(f.cache, "location-old.json");
+  for (const [file, age] of [[old, 8 * day + 60000], [recent, 7 * day], [other, 30 * day]]) {
+    await fs.writeFile(file, sun);
+    const time = new Date(Date.now() - age);
+    await fs.utimes(file, time, time);
   }
-  const request = exec(path.join(bin, "bash"), [script], { env: { ...f.env, PATH: bin } });
-  request.child.stdin.end("12\n34\n");
-  const report = JSON.parse((await request).stdout);
-  assert.deepEqual(report, { error: "Missing required program: %1", values: ["curl"] });
+  await f.run();
+  const names = await fs.readdir(f.cache);
+  assert.ok(!names.includes(path.basename(old)), "an old sun cache stayed");
+  assert.ok(names.includes(path.basename(recent)), "a week-old sun cache was removed");
+  assert.ok(names.includes(path.basename(other)), "only sun caches are pruned");
 });

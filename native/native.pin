@@ -1,0 +1,11 @@
+# native.pin: written by foamy-kit tools/build-native.sh; do not edit.
+# check.sh and tests/kit-check.sh verify bin/<arch>/<binary> against it and
+# report the binaries stale when `source` no longer matches the crate, kit/rust,
+# Cargo.toml, Cargo.lock and rust-toolchain.toml. Rebuild: foamy-kit tools/build-native.sh <plugin>.
+crate native
+binary foamy-weather-helper
+toolchain 1.99.1
+kit 0.5.0
+source 8b56abee839618c917ec35ac15b35e5b05577928c3f4174f504fbe2bef9afbae
+64c2e5f228871a46a1c4d17e28d18b5e6a374726c78ad055b9d5cfcda0169322  bin/aarch64/foamy-weather-helper
+12c1be80c447cacb2e21d675225c0390f8c4e904fb907be3560dd5a19acff8b6  bin/x86_64/foamy-weather-helper
