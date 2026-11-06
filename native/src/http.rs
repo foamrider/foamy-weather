@@ -22,6 +22,10 @@ const MAX_HEAD: usize = 64 * 1024;
 const MAX_HEADERS: usize = 100;
 /// Raw bytes still read after a compressed body ended, to see its framing end.
 const MAX_TRAILING: u64 = 64 * 1024;
+/// Happy Eyeballs: the next address is tried this long after the previous
+/// attempt started, if that one has not connected or failed yet (curl's
+/// default; RFC 8305 recommends 250 ms).
+const ATTEMPT_DELAY: Duration = Duration::from_millis(200);
 
 /// One GET.
 pub struct Request<'a> {
@@ -164,7 +168,18 @@ fn read_response<R: BufRead>(mut reader: R, limit: usize) -> Result<Response, Er
     if status >= 400 {
         return Err(Error::Status(status));
     }
-    let framing = framing(status, &headers)?;
+    // RFC 9112 §6.3: a 204 or 304 has no body, whatever Content-Length and
+    // Content-Encoding (metadata of the selected representation) say, so
+    // nothing is read or decoded; 1xx never gets here. Replies to HEAD are
+    // bodyless too, but this helper only sends GET.
+    if status == 204 || status == 304 {
+        return Ok(Response {
+            status,
+            headers,
+            body: Vec::new(),
+        });
+    }
+    let framing = framing(&headers)?;
     let mut body = Body {
         inner: reader,
         framing,
@@ -265,13 +280,10 @@ enum Framing {
     Close,
 }
 
-/// RFC 9112 §6.3: no body for 1xx, 204 and 304; chunked when it is the
+/// RFC 9112 §6.3 for a status that has a body: chunked when it is the
 /// final transfer coding; else Content-Length; else until the server
 /// closes (with TLS close_notify: a bare TCP close is a truncation).
-fn framing(status: u16, headers: &[(String, String)]) -> Result<Framing, Error> {
-    if status == 204 || status == 304 {
-        return Ok(Framing::Empty);
-    }
+fn framing(headers: &[(String, String)]) -> Result<Framing, Error> {
     let codings: Vec<String> = headers
         .iter()
         .filter(|(n, _)| n.eq_ignore_ascii_case("transfer-encoding"))
@@ -448,6 +460,8 @@ fn read_limited<R: Read>(reader: R, limit: usize) -> Result<Vec<u8>, Error> {
 
 /// The decoded body. A compressed body must also end where its framing
 /// says (a transfer cut after the compressed data is still a truncation).
+/// An empty body is empty whatever its Content-Encoding (curl
+/// `--compressed` prints nothing and succeeds; the caller then judges it).
 fn decode<R: BufRead>(
     body: &mut Body<R>,
     headers: &[(String, String)],
@@ -460,13 +474,22 @@ fn decode<R: BufRead>(
         .map(|c| c.trim().to_ascii_lowercase())
         .filter(|c| !c.is_empty() && c != "identity")
         .collect();
-    let data = match coding.as_slice() {
+    let gzip = match coding.as_slice() {
         [] => return read_limited(&mut *body, limit),
-        [gzip] if gzip == "gzip" || gzip == "x-gzip" => {
-            read_limited(GzDecoder::new(&mut *body), limit)?
-        }
-        [deflate] if deflate == "deflate" => read_limited(ZlibDecoder::new(&mut *body), limit)?,
+        [gzip] if gzip == "gzip" || gzip == "x-gzip" => true,
+        [deflate] if deflate == "deflate" => false,
         _ => return Err(failed("unsupported content coding")),
+    };
+    let mut first = [0u8; 4096];
+    let read = body.read(&mut first).map_err(io_error)?;
+    if read == 0 {
+        return Ok(Vec::new());
+    }
+    let raw = (&first[..read]).chain(&mut *body);
+    let data = if gzip {
+        read_limited(GzDecoder::new(raw), limit)?
+    } else {
+        read_limited(ZlibDecoder::new(raw), limit)?
     };
     io::copy(&mut body.by_ref().take(MAX_TRAILING), &mut io::sink()).map_err(io_error)?;
     if !body.finished() {
@@ -497,15 +520,78 @@ fn resolve(host: &str, port: u16, deadline: Instant) -> Result<Vec<SocketAddr>, 
     }
 }
 
+/// RFC 8305 §4: the resolver's order, alternating address families from
+/// the first one's.
+fn interleave(addresses: &[SocketAddr]) -> Vec<SocketAddr> {
+    let Some(first) = addresses.first() else {
+        return Vec::new();
+    };
+    let (mut primary, mut other): (Vec<SocketAddr>, Vec<SocketAddr>) = addresses
+        .iter()
+        .partition(|a| a.is_ipv4() == first.is_ipv4());
+    primary.reverse();
+    other.reverse();
+    let mut ordered = Vec::with_capacity(addresses.len());
+    while !primary.is_empty() || !other.is_empty() {
+        ordered.extend(primary.pop());
+        ordered.extend(other.pop());
+    }
+    ordered
+}
+
+/// Happy Eyeballs (RFC 8305), as curl does: one attempt per address on its
+/// own thread, the next one starting after `ATTEMPT_DELAY` or as soon as
+/// the previous one fails, all racing until the deadline. The first
+/// connection wins; later ones are closed when their thread finds the
+/// receiver gone. So an address that drops SYNs (broken IPv6, say) costs
+/// 200 ms, not the whole connect budget.
 fn connect_addresses(addresses: &[SocketAddr], deadline: Instant) -> Result<TcpStream, Error> {
+    let (sender, receiver) = mpsc::channel();
+    let mut queue = interleave(addresses).into_iter().peekable();
+    let mut pending = 0usize;
     let mut last = failed("no address to connect to");
-    for address in addresses {
-        match TcpStream::connect_timeout(address, remaining(deadline)?) {
-            Ok(stream) => return Ok(stream),
-            Err(error) => last = io_error(error),
+    loop {
+        if let Some(address) = queue.next() {
+            let timeout = remaining(deadline)?;
+            let sender = sender.clone();
+            let spawned = thread::Builder::new().stack_size(64 * 1024).spawn(move || {
+                let _ = sender.send(TcpStream::connect_timeout(&address, timeout));
+            });
+            match spawned {
+                Ok(_) => pending += 1,
+                Err(error) => last = failed(error),
+            }
+        }
+        if pending == 0 {
+            if queue.peek().is_some() {
+                continue;
+            }
+            return Err(last);
+        }
+        // Wait for this attempt until the next one is due (or the deadline).
+        let next_due = if queue.peek().is_some() {
+            (Instant::now() + ATTEMPT_DELAY).min(deadline)
+        } else {
+            deadline
+        };
+        loop {
+            let wait = next_due.saturating_duration_since(Instant::now());
+            match receiver.recv_timeout(wait) {
+                Ok(Ok(stream)) => return Ok(stream),
+                Ok(Err(error)) => {
+                    pending -= 1;
+                    last = io_error(error);
+                    if queue.peek().is_some() || pending == 0 {
+                        break;
+                    }
+                }
+                Err(_) => {
+                    remaining(deadline)?;
+                    break;
+                }
+            }
         }
     }
-    Err(last)
 }
 
 fn connect_host(host: &str, port: u16, deadline: Instant) -> Result<TcpStream, Error> {
@@ -515,15 +601,24 @@ fn connect_host(host: &str, port: u16, deadline: Instant) -> Result<TcpStream, E
 fn connect_direct(host: &str, deadline: Instant) -> Result<TcpStream, Error> {
     match std::env::var_os(TEST_CONNECT) {
         None => connect_host(host, 443, deadline),
-        Some(target) => {
-            let address: SocketAddr = target
-                .to_str()
-                .and_then(|t| t.parse().ok())
-                .filter(|a: &SocketAddr| a.ip().is_loopback())
-                .ok_or_else(|| failed(format!("{TEST_CONNECT} must be a loopback ip:port")))?;
-            connect_addresses(&[address], deadline)
-        }
+        Some(target) => connect_addresses(&test_addresses(&target)?, deadline),
     }
+}
+
+/// `FOAMY_WEATHER_TEST_CONNECT`: comma-separated loopback `ip:port`s,
+/// standing in for the host's resolved addresses (in that order).
+fn test_addresses(target: &std::ffi::OsStr) -> Result<Vec<SocketAddr>, Error> {
+    let refuse = || failed(format!("{TEST_CONNECT} must be loopback ip:port values"));
+    let text = target.to_str().ok_or_else(refuse)?;
+    text.split(',')
+        .map(|part| {
+            part.trim()
+                .parse()
+                .ok()
+                .filter(|a: &SocketAddr| a.ip().is_loopback())
+                .ok_or_else(refuse)
+        })
+        .collect()
 }
 
 /// An HTTP proxy for CONNECT.
@@ -814,6 +909,122 @@ mod tests {
         }
         chunked.extend(b"0\r\n\r\n");
         assert_eq!(response(&chunked, 100).unwrap().body, b"hello world");
+    }
+
+    #[test]
+    fn bodyless_and_empty_bodies_are_not_decoded() {
+        // A revalidation's 304 (and a 204) carries the representation's
+        // Content-Encoding and Content-Length but no body.
+        for raw in [
+            &b"HTTP/1.1 304 Not Modified\r\nContent-Encoding: gzip\r\n\r\n"[..],
+            b"HTTP/1.1 304 Not Modified\r\nContent-Encoding: gzip\r\nContent-Length: 77\r\n\r\n",
+            b"HTTP/1.1 304 Not Modified\r\nContent-Encoding: br\r\nTransfer-Encoding: chunked\r\n\r\n",
+            b"HTTP/1.1 204 No Content\r\nContent-Encoding: deflate\r\n\r\n",
+        ] {
+            let r = response(raw, 10).unwrap();
+            assert!(r.body.is_empty(), "{}", String::from_utf8_lossy(raw));
+        }
+        // curl --compressed: an empty body is empty whatever its coding.
+        for raw in [
+            &b"HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: 0\r\n\r\n"[..],
+            b"HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nContent-Encoding: deflate\r\n\r\n",
+        ] {
+            let r = response(raw, 10).unwrap();
+            assert_eq!((r.status, r.body.len()), (200, 0));
+        }
+        // An unsupported coding still fails, empty or not.
+        assert!(matches!(
+            response(
+                b"HTTP/1.1 200 OK\r\nContent-Encoding: br\r\nContent-Length: 0\r\n\r\n",
+                10
+            ),
+            Err(Error::Failed(_))
+        ));
+    }
+
+    /// A loopback port whose accept queue is full: the kernel drops SYNs,
+    /// so connecting hangs like an unreachable address.
+    fn blackhole() -> (TcpListener, Vec<TcpStream>) {
+        use std::os::fd::AsRawFd;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        assert_eq!(unsafe { libc::listen(listener.as_raw_fd(), 0) }, 0);
+        let address = listener.local_addr().unwrap();
+        let mut fillers = Vec::new();
+        while let Ok(stream) = TcpStream::connect_timeout(&address, Duration::from_millis(300)) {
+            fillers.push(stream);
+            assert!(fillers.len() < 16, "the accept queue never filled");
+        }
+        (listener, fillers)
+    }
+
+    #[test]
+    fn a_dropped_address_does_not_spend_the_connect_budget() {
+        let (hole, _fillers) = blackhole();
+        let open = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addresses = [hole.local_addr().unwrap(), open.local_addr().unwrap()];
+        let started = Instant::now();
+        let stream = connect_addresses(&addresses, started + Duration::from_secs(3)).unwrap();
+        let elapsed = started.elapsed();
+        assert_eq!(stream.peer_addr().unwrap(), addresses[1]);
+        assert!(
+            elapsed >= ATTEMPT_DELAY && elapsed < Duration::from_millis(1500),
+            "{elapsed:?}"
+        );
+        // A refused address hands over at once, without the delay.
+        let refused = TcpListener::bind("127.0.0.1:0").unwrap();
+        let closed = refused.local_addr().unwrap();
+        drop(refused);
+        let started = Instant::now();
+        let stream = connect_addresses(&[closed, addresses[1]], started + Duration::from_secs(3));
+        assert_eq!(stream.unwrap().peer_addr().unwrap(), addresses[1]);
+        assert!(started.elapsed() < ATTEMPT_DELAY, "{:?}", started.elapsed());
+        // Only dropped addresses: the deadline, not an attempt per address.
+        let started = Instant::now();
+        assert_eq!(
+            connect_addresses(&[addresses[0]; 3], started + Duration::from_millis(700))
+                .unwrap_err(),
+            Error::Timeout
+        );
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= Duration::from_millis(700) && elapsed < Duration::from_millis(1200),
+            "{elapsed:?}"
+        );
+        // Every address refused: the last error.
+        assert!(matches!(
+            connect_addresses(&[closed, closed], Instant::now() + Duration::from_secs(3)),
+            Err(Error::Failed(_))
+        ));
+    }
+
+    #[test]
+    fn addresses_alternate_families() {
+        let a = |text: &str| text.parse::<SocketAddr>().unwrap();
+        let (v6a, v6b, v4a, v4b) = (
+            a("[::1]:1"),
+            a("[::2]:1"),
+            a("127.0.0.1:1"),
+            a("127.0.0.2:1"),
+        );
+        assert_eq!(interleave(&[v6a, v6b, v4a, v4b]), [v6a, v4a, v6b, v4b]);
+        assert_eq!(interleave(&[v4a, v6a, v6b]), [v4a, v6a, v6b]);
+        assert_eq!(interleave(&[v4a, v4b]), [v4a, v4b]);
+        assert!(interleave(&[]).is_empty());
+    }
+
+    #[test]
+    fn the_test_override_takes_loopback_addresses_only() {
+        assert_eq!(
+            test_addresses("127.0.0.1:1, [::1]:2".as_ref()).unwrap(),
+            [
+                "127.0.0.1:1".parse::<SocketAddr>().unwrap(),
+                "[::1]:2".parse().unwrap()
+            ]
+        );
+        for bad in ["", "127.0.0.1:1,192.0.2.1:443", "localhost:1", "127.0.0.1"] {
+            assert!(test_addresses(bad.as_ref()).is_err(), "{bad}");
+        }
     }
 
     #[test]

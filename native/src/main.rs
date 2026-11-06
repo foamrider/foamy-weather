@@ -126,10 +126,15 @@
 //! `all_proxy`/`ALL_PROXY` (`http://[user:pass@]host[:port]`, port 1080 by
 //! default, CONNECT; any other scheme fails the request), skipped for hosts
 //! in `no_proxy`/`NO_PROXY` (`*`, or names matching themselves and their
-//! subdomains).
+//! subdomains). The host's (or proxy's) addresses are tried as curl does,
+//! Happy Eyeballs: families alternating, each attempt on its own thread,
+//! the next one 200 ms later or as soon as the previous fails, the first
+//! connection winning within the connect timeout. A 204 or 304 has no body
+//! (its Content-Encoding is not applied), and an empty body is empty
+//! whatever its Content-Encoding (curl `--compressed`).
 //!
-//! **Test-only override**: `FOAMY_WEATHER_TEST_CONNECT=<loopback ip>:<port>`
-//! sends every direct connection there instead of the host's address (TLS is
+//! **Test-only override**: `FOAMY_WEATHER_TEST_CONNECT=<loopback ip>:<port>[,…]`
+//! stands in for the resolved addresses of every direct connection (TLS is
 //! still verified for the real host name, so tests point `SSL_CERT_FILE` at
 //! their own CA); a non-loopback address fails the request.
 

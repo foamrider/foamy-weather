@@ -18,12 +18,15 @@ CLI for the node and bash tests:
   python3 tests/fakenet.py serve DIR     # writes DIR/port; logs DIR/requests;
                                          # replies from DIR/<kind>.json if present
   python3 tests/fakenet.py argv SUBCOMMAND [ARG...]   # NUL-separated helper argv
+  python3 tests/fakenet.py blackhole     # prints a loopback port that drops
+                                         # connection attempts, until stdin closes
 """
 import http.server
 import json
 import os
 from pathlib import Path
 import platform
+import socket
 import ssl
 import subprocess
 import sys
@@ -169,6 +172,26 @@ def network_env(env, port, ca):
     return env
 
 
+def blackhole():
+    """A loopback listener whose accept queue is full and never drained, so
+    the kernel drops further SYNs: a connection to it hangs like one to an
+    unreachable address. Returns the listener and the sockets filling it."""
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    listener.listen(0)
+    fillers = []
+    while len(fillers) < 16:
+        client = socket.socket()
+        client.settimeout(0.3)
+        try:
+            client.connect(listener.getsockname())
+        except TimeoutError:
+            client.close()
+            return listener, fillers
+        fillers.append(client)
+    raise SystemExit('could not fill the accept queue')
+
+
 def serve(directory):
     """Serve until killed; replies from DIR/<kind>.json, requests logged."""
     directory = Path(directory)
@@ -198,5 +221,9 @@ if __name__ == '__main__':
         serve(rest[0])
     elif command == 'argv':
         sys.stdout.write(''.join(arg + '\0' for arg in helper_command(*rest)))
+    elif command == 'blackhole':
+        listener, fillers = blackhole()
+        print(listener.getsockname()[1], flush=True)
+        sys.stdin.read()
     else:
         raise SystemExit(__doc__)

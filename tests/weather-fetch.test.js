@@ -4,7 +4,7 @@
 // to FOAMY_WEATHER_TEST_CONNECT and trusts the throwaway CA through
 // SSL_CERT_FILE.
 const assert = require("node:assert/strict");
-const { execFile, execFileSync } = require("node:child_process");
+const { execFile, execFileSync, spawn } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const fs = require("node:fs/promises");
 const http = require("node:http");
@@ -252,6 +252,64 @@ test("honours MET Expires, revalidates with If-Modified-Since and spaces forced 
   await f.run(true);
   assert.equal(f.forecastHeaders.length, 3);
   assert.equal(f.forecastHeaders[2]["if-modified-since"], lastModified);
+});
+
+test("a 304 carrying Content-Encoding renews the cache without decoding", async t => {
+  const f = await fixture(t);
+  const lastModified = "Thu, 29 Oct 2026 10:00:00 GMT";
+  f.responses.forecast.headers = { "Last-Modified": lastModified };
+  assert.equal((await f.run()).stale, false);
+  const metaPath = f.forecastPath.replace(/\.json$/, ".meta");
+  const old = new Date(Date.now() - 7200 * 1000);
+  await fs.utimes(f.forecastPath, old, old);
+  await fs.writeFile(metaPath, `${Math.floor(Date.now() / 1000) - 10}\n${lastModified}\n`);
+  const expires = Math.floor(Date.now() / 1000) + 1800;
+  // Content-Encoding (and Content-Length) describe the representation; a 304 has no body.
+  f.responses.forecast = { handle(req, res) {
+    assert.equal(req.headers["if-modified-since"], lastModified);
+    res.writeHead(304, { "Content-Encoding": "gzip", "Content-Length": "1234",
+      Expires: new Date(expires * 1000).toUTCString(), "Last-Modified": lastModified });
+    res.end();
+  } };
+  const report = await f.run();
+  assert.equal(report.stale, false);
+  assert.ok(Date.now() - (await fs.stat(f.forecastPath)).mtimeMs < 60000, "a 304 refreshes the cache age");
+  assert.equal(await fs.readFile(metaPath, "utf8"), `${expires}\n${lastModified}\n`);
+  assert.equal(Model.currentCondition(Model.parseBundle(JSON.stringify(report))).temperature, 12);
+});
+
+test("an empty 200 with Content-Encoding is an empty body, as with curl, and a failed refresh", async t => {
+  const f = await fixture(t);
+  assert.equal((await f.run()).stale, false);
+  const cached = await fs.readFile(f.forecastPath, "utf8");
+  for (const headers of [{ "Content-Length": "0" }, { "Transfer-Encoding": "chunked" }]) {
+    f.responses.forecast = { handle(req, res) {
+      res.writeHead(200, { "Content-Encoding": "gzip", ...headers });
+      res.end();
+    } };
+    assert.equal((await f.run(true)).stale, true);
+    assert.equal(await fs.readFile(f.forecastPath, "utf8"), cached);
+  }
+});
+
+test("an address that drops connection attempts costs one Happy Eyeballs delay, not the budget", async t => {
+  const f = await fixture(t);
+  const blackhole = spawn("python3", [fakenet, "blackhole"], { stdio: ["pipe", "pipe", "inherit"] });
+  t.after(() => blackhole.kill());
+  const port = await new Promise((resolve, reject) => {
+    blackhole.once("error", reject);
+    blackhole.stdout.once("data", data => resolve(Number(String(data).trim())));
+  });
+  assert.ok(port > 0);
+  const started = Date.now();
+  const report = await f.run(false, { FOAMY_WEATHER_TEST_CONNECT: `127.0.0.1:${port},127.0.0.1:${f.port}` });
+  const elapsed = Date.now() - started;
+  assert.equal(report.stale, false);
+  assert.ok(report.sun.every(day => day.sunrise && day.sunset));
+  assert.equal(f.requests.length, 4);
+  // Four requests, each 200 ms behind the dropped address; one request's
+  // connect budget is 3 s, which the old serial connect spent on the first.
+  assert.ok(elapsed < 3000, `took ${elapsed} ms`);
 });
 
 test("migrates 1.1 caches hashed from four-decimal coordinates", async t => {
