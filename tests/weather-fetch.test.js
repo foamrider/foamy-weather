@@ -1,8 +1,8 @@
 // The forecast helper as a process (tests/fakenet.py: bin/<arch>/
-// foamy-weather-helper, FOAMY_HELPER overrides it) against a loopback HTTPS stand-in for MET
-// Norway. Nothing is sent to api.met.no: the native helper connects to
-// FOAMY_WEATHER_TEST_CONNECT and trusts the throwaway CA through
-// SSL_CERT_FILE; the Bash script runs real curl with --connect-to/--cacert.
+// foamy-weather-helper, FOAMY_HELPER overrides it) against a loopback HTTPS
+// stand-in for MET Norway. Nothing is sent to api.met.no: the helper connects
+// to FOAMY_WEATHER_TEST_CONNECT and trusts the throwaway CA through
+// SSL_CERT_FILE.
 const assert = require("node:assert/strict");
 const { execFile, execFileSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
@@ -20,7 +20,6 @@ const Model = require("../Model.js");
 const exec = promisify(execFile);
 const fakenet = path.join(__dirname, "fakenet.py");
 const helper = execFileSync("python3", [fakenet, "argv", "fetch"], { encoding: "utf8" }).split("\0").slice(0, -1);
-const native = process.env.FOAMY_HELPER !== "bash";
 const proxyVariables = ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "no_proxy", "NO_PROXY", "SSL_CERT_DIR"];
 const forecastLimit = 2 * 1024 * 1024;
 const sunLimit = 64 * 1024;
@@ -45,9 +44,7 @@ async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "weather-fetch-test-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const cache = path.join(root, "cache/omarchy-weather");
-  const bin = path.join(root, "bin");
   await fs.mkdir(cache, { recursive: true });
-  await fs.mkdir(bin);
   const tls = path.join(root, "tls");
   execFileSync("python3", [fakenet, "certs", tls]);
   const responses = { forecast: { body: forecast }, sun: { body: sun } };
@@ -95,40 +92,11 @@ async function fixture(t) {
 
   const port = server.address().port;
   const env = { ...process.env, XDG_CACHE_HOME: path.join(root, "cache"),
-    PATH: `${bin}:${process.env.PATH}`, WEATHER_TEST_ROOT: root,
-    FOAMY_WEATHER_TEST_CONNECT: `127.0.0.1:${port}`, FOAMY_WEATHER_TEST_PORT: String(port),
+    FOAMY_WEATHER_TEST_CONNECT: `127.0.0.1:${port}`,
     SSL_CERT_FILE: path.join(tls, "ca.pem"),
     // Forced refreshes download at once unless a test asks for the minimum age.
     MET_WEATHER_FORCE_MIN_AGE: "0" };
   for (const name of proxyVariables) delete env[name];
-  // Only the connection is redirected: the Bash script still runs real curl
-  // (TLS, decompression), byte limiting, jq, and cache promotion. The jq and
-  // rm wrappers only observe the Bash script; the native helper runs neither.
-  const wrappers = {
-    curl: `exec "$WEATHER_TEST_CURL" --connect-to "::127.0.0.1:$FOAMY_WEATHER_TEST_PORT" --cacert "$SSL_CERT_FILE" "$@"
-`,
-    jq: `for arg in "$@"; do
-  [[ -f $arg ]] || continue
-  case "$arg" in *forecast*) limit=${forecastLimit} ;; *sun*) limit=${sunLimit} ;; *) continue ;; esac
-  if (( $(stat -c %s -- "$arg") > limit )); then
-    printf '%s\\n' "$arg" >>"$WEATHER_TEST_ROOT/oversized-parse"
-    exit 99
-  fi
-done
-exec "$WEATHER_TEST_JQ" "$@"
-`,
-    rm: `# Record temporary file sizes before the production EXIT trap removes them.
-for arg in "$@"; do
-  [[ -f $arg ]] || continue
-  printf '%s\\t%s\\n' "$(stat -c %s -- "$arg")" "$arg" >>"$WEATHER_TEST_ROOT/removed"
-done
-exec "$WEATHER_TEST_RM" "$@"
-`
-  };
-  for (const [name, body] of Object.entries(wrappers)) {
-    env[`WEATHER_TEST_${name.toUpperCase()}`] = (await exec("bash", ["-c", `command -v ${name}`])).stdout.trim();
-    await fs.writeFile(path.join(bin, name), `#!/bin/bash\nset -euo pipefail\n${body}`, { mode: 0o755 });
-  }
   const cacheKey = createHash("sha256").update("12.000_34.000").digest("hex");
   const forecastPath = path.join(cache, `forecast-complete-${cacheKey}.json`);
   return { responses, requests, forecastHeaders, cache, forecastPath, env, port,
@@ -137,14 +105,6 @@ exec "$WEATHER_TEST_RM" "$@"
         { env: { ...env, ...extraEnv }, timeout: 25000, maxBuffer: 8 * 1024 * 1024 });
       request.child.stdin.end("12\n34\n");
       const { stdout } = await request;
-      assert.equal(await fs.access(path.join(root, "oversized-parse")).then(() => true, () => false), false,
-        "oversized files must never reach jq");
-      const removed = await fs.readFile(path.join(root, "removed"), "utf8").catch(() => "");
-      for (const line of removed.trim().split("\n").filter(Boolean)) {
-        const [size, file] = line.split("\t");
-        const limit = file.includes(".forecast.") ? forecastLimit : sunLimit;
-        assert.ok(Number(size) <= limit + 1, `temporary download exceeded its byte ceiling: ${line}`);
-      }
       assert.equal((await fs.readdir(cache)).some(name => name.startsWith(".")), false,
         "temporary files must be cleaned up");
       return JSON.parse(stdout);
@@ -322,17 +282,11 @@ test("rounds forecast coordinates to three decimals and keeps them out of cache 
   assert.ok(names.every(name => !name.includes("12.000") && !name.includes("34.000")));
 });
 
-test("missing programs are reported with a translatable key", { skip: native && "the native helper runs no programs" }, async t => {
+test("the forecast needs no other program", async t => {
   const f = await fixture(t);
-  const bin = path.join(f.cache, "..", "..", "minimal-bin");
-  await fs.mkdir(bin);
-  for (const name of ["bash", "jq", "date", "stat", "awk", "head", "sha256sum"]) {
-    await fs.symlink((await exec("bash", ["-c", `command -v ${name}`])).stdout.trim(), path.join(bin, name));
-  }
-  const request = exec(path.join(bin, "bash"), [helper[0]], { env: { ...f.env, PATH: bin } });
-  request.child.stdin.end("12\n34\n");
-  const report = JSON.parse((await request).stdout);
-  assert.deepEqual(report, { error: "Missing required program: %1", values: ["curl"] });
+  const report = await f.run(false, { PATH: "" });
+  assert.equal(report.stale, false);
+  assert.ok(report.sun.every(day => day.sunrise && day.sunset));
 });
 
 test("a forecast trickled byte by byte ends at the 10 s deadline", async t => {

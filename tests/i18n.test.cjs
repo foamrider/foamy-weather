@@ -29,21 +29,18 @@ for (const language of ['en', 'no']) {
 }
 assert.equal(I.plural('%1 hours ago', 'en', 1), '1 hour ago');
 assert.equal(I.plural('%1 hours ago', 'no', 3), '3 timer siden');
-// Every key the plugin and its scripts emit has a catalog entry.
+// Every key the plugin and its helper emit has a catalog entry.
 const sources = ['Panel.qml', 'WeatherView.qml', 'WeatherSettings.qml', 'WeatherService.qml']
   .map(name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8')).join('\n');
 for (const [, key] of sources.matchAll(/FoamyI18n\.tn?\("((?:[^"\\]|\\.)*)"/g)) assert.ok(Object.hasOwn(I.en, key), `missing catalog key: ${key}`);
 for (const [, key] of sources.matchAll(/(?:settingsError = |setError\()"([^"]+)"/g)) assert.ok(Object.hasOwn(I.en, key), `missing error key: ${key}`);
-const scripts = ['weather-fetch.sh', 'weather-resolve-location.sh']
-  .map(name => fs.readFileSync(path.join(__dirname, '../scripts', name), 'utf8')).join('\n');
-assert.doesNotMatch(scripts, /Mangler|Ukjent/, 'script errors are English keys');
-for (const [, key] of scripts.matchAll(/json_error "([^"]+)"/g)) assert.ok(Object.hasOwn(I.en, key), `missing script error key: ${key}`);
 // The native helper's error keys (native/src/util.rs `mod keys`), the kit's
 // HTTPS-unsupported text it passes on, and the helper-unavailable message.
 const util = fs.readFileSync(path.join(__dirname, '../native/src/util.rs'), 'utf8');
 const keys = util.slice(util.indexOf('pub mod keys {'), util.indexOf('}', util.indexOf('pub mod keys {')));
 const helperKeys = [...keys.matchAll(/: &str = "([^"]+)";/g)].map(m => m[1]);
 assert.ok(helperKeys.length >= 7, 'helper error keys found');
+assert.doesNotMatch(helperKeys.join('\n'), /Mangler|Ukjent/, 'helper errors are English keys');
 const Model = require('../Model.js');
 const tls = fs.readFileSync(path.join(__dirname, '../kit/rust/foamy-helper/src/tls.rs'), 'utf8');
 assert.equal(tls.match(/pub const UNSUPPORTED: &str = "([^"]+)";/)[1], Model.HTTPS_UNSUPPORTED, 'Model.HTTPS_UNSUPPORTED is tls::UNSUPPORTED');

@@ -102,11 +102,11 @@ test("a fetch for a previous location is ignored and keeps the shown report", ()
   assert.equal(c.retryTimer.starts, 0); assert.equal(c.loading, false);
 });
 
-test("script errors keep their key and values for translation", () => {
+test("helper errors keep their key and values for translation", () => {
   const c = fixture(); c.networkReady = true;
-  c.finishWeather(JSON.stringify({ error: "Missing required program: %1", values: ["curl"] }), 0, "12,34", "");
-  assert.equal(c.errorMessage, "Missing required program: %1");
-  assert.deepEqual(Array.from(c.errorValues), ["curl"]);
+  c.finishWeather(JSON.stringify({ error: "Unknown option: %1", values: ["--bogus"] }), 0, "12,34", "");
+  assert.equal(c.errorMessage, "Unknown option: %1");
+  assert.deepEqual(Array.from(c.errorValues), ["--bogus"]);
 });
 
 test("a coordinate change keeps the report and restarts a running fetch", () => {

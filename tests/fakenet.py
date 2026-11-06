@@ -3,19 +3,14 @@
 The helper never reaches the real MET Norway, Nominatim or Open-Meteo hosts in
 tests. A loopback HTTPS server (``Server``) stands in for all three; its
 certificate is issued by a throwaway CA (``make_certs``, via ``openssl``) for
-the real host names, so TLS is verified exactly as in production:
-
-- the native helper connects to ``FOAMY_WEATHER_TEST_CONNECT`` (a loopback
-  ``ip:port``, test-only) instead of the host's address, and trusts the CA
-  through ``SSL_CERT_FILE``;
-- the old Bash scripts run real ``curl`` through a wrapper on ``PATH`` that
-  adds ``--connect-to ::<ip>:<port>`` and ``--cacert``.
+the real host names, so TLS is verified exactly as in production: the helper
+connects to ``FOAMY_WEATHER_TEST_CONNECT`` (a loopback ``ip:port``, test-only)
+instead of the host's address, and trusts the CA through ``SSL_CERT_FILE``.
 
 ``helper_command(subcommand, *args)`` is the argv of the helper under test:
 ``bin/<machine>/foamy-weather-helper`` (absolute, so it runs with any
 ``PATH``). ``FOAMY_HELPER`` (a JSON argv prefix, absolute paths) overrides it;
-the subcommand and its arguments follow the prefix. ``FOAMY_HELPER=bash``
-runs the old Bash scripts instead.
+the subcommand and its arguments follow the prefix.
 
 CLI for the node and bash tests:
 
@@ -23,14 +18,12 @@ CLI for the node and bash tests:
   python3 tests/fakenet.py serve DIR     # writes DIR/port; logs DIR/requests;
                                          # replies from DIR/<kind>.json if present
   python3 tests/fakenet.py argv SUBCOMMAND [ARG...]   # NUL-separated helper argv
-  python3 tests/fakenet.py curl-wrapper BIN_DIR       # writes BIN_DIR/curl
 """
 import http.server
 import json
 import os
 from pathlib import Path
 import platform
-import shutil
 import ssl
 import subprocess
 import sys
@@ -39,11 +32,6 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 HOSTS = ['api.met.no', 'nominatim.openstreetmap.org', 'geocoding-api.open-meteo.com']
-SCRIPTS = {
-    'fetch': 'scripts/weather-fetch.sh',
-    'location': 'scripts/weather-location.sh',
-    'resolve-location': 'scripts/weather-resolve-location.sh',
-}
 PROXY_VARIABLES = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY',
                    'all_proxy', 'ALL_PROXY', 'no_proxy', 'NO_PROXY']
 
@@ -51,8 +39,6 @@ PROXY_VARIABLES = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY',
 def helper_command(subcommand, *args):
     """The helper's argv: FOAMY_HELPER (or the bundled binary) + subcommand."""
     prefix = os.environ.get('FOAMY_HELPER')
-    if prefix == 'bash':
-        return [str(ROOT / SCRIPTS[subcommand]), *args]
     if prefix:
         argv = json.loads(prefix)
         if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
@@ -60,10 +46,6 @@ def helper_command(subcommand, *args):
         return [*argv, subcommand, *args]
     return [str(ROOT / 'bin' / platform.machine() / 'foamy-weather-helper'), subcommand, *args]
 
-
-def native():
-    """True when the helper under test is not one of the Bash scripts."""
-    return os.environ.get('FOAMY_HELPER') != 'bash'
 
 
 def make_certs(directory):
@@ -179,23 +161,10 @@ class Server:
         self.httpd.server_close()
 
 
-def write_curl_wrapper(bin_dir, real_curl=None, prefix=''):
-    """BIN_DIR/curl: real curl, connected to the loopback server and trusting
-    the test CA (for the Bash scripts; the native helper never runs curl)."""
-    real_curl = real_curl or shutil.which('curl', path='/usr/bin:/bin')
-    wrapper = Path(bin_dir) / 'curl'
-    wrapper.write_text('#!/bin/bash\n' + prefix + 'exec ' + real_curl +
-                       ' --connect-to "::127.0.0.1:$FOAMY_WEATHER_TEST_PORT"'
-                       ' --cacert "$SSL_CERT_FILE" "$@"\n')
-    wrapper.chmod(0o755)
-    return wrapper
-
-
 def network_env(env, port, ca):
-    """``env`` pointed at the loopback server (both helper kinds), no proxies."""
+    """``env`` pointed at the loopback server, without proxies."""
     env = {key: value for key, value in env.items() if key not in PROXY_VARIABLES}
-    env.update(FOAMY_WEATHER_TEST_CONNECT=f'127.0.0.1:{port}', FOAMY_WEATHER_TEST_PORT=str(port),
-               SSL_CERT_FILE=ca)
+    env.update(FOAMY_WEATHER_TEST_CONNECT=f'127.0.0.1:{port}', SSL_CERT_FILE=ca)
     env.pop('SSL_CERT_DIR', None)
     return env
 
@@ -229,7 +198,5 @@ if __name__ == '__main__':
         serve(rest[0])
     elif command == 'argv':
         sys.stdout.write(''.join(arg + '\0' for arg in helper_command(*rest)))
-    elif command == 'curl-wrapper':
-        write_curl_wrapper(rest[0])
     else:
         raise SystemExit(__doc__)

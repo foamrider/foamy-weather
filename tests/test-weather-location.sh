@@ -28,13 +28,10 @@ python3 "$plugin_root/tests/fakenet.py" serve "$test_root/net" &
 server_pid=$!
 for _ in $(seq 100); do [[ -e $test_root/net/port ]] && break; sleep 0.1; done
 [[ -e $test_root/net/port ]] || fail "the loopback server did not start"
-python3 "$plugin_root/tests/fakenet.py" curl-wrapper "$mock_bin"
 for variable in http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY SSL_CERT_DIR; do
   unset "$variable"
 done
-FOAMY_WEATHER_TEST_PORT=$(cat "$test_root/net/port")
-export FOAMY_WEATHER_TEST_PORT
-export FOAMY_WEATHER_TEST_CONNECT="127.0.0.1:$FOAMY_WEATHER_TEST_PORT"
+export FOAMY_WEATHER_TEST_CONNECT="127.0.0.1:$(cat "$test_root/net/port")"
 export SSL_CERT_FILE="$test_root/net/ca.pem"
 
 cat >"$mock_bin/where-am-i" <<'EOF'

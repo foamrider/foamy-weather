@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
 import subprocess
 import sys
@@ -44,8 +43,8 @@ class PrivateLocation(unittest.TestCase):
                                             WEATHER_GEOCLUE_COMMAND=str(self.bin / 'where-am-i'),
                                             WEATHER_PRIVACY_AUDIT=str(self.audit)),
                                        self.server.port, certs['ca'])
-        # Sample the actual helper process and its caller before exec forwards argv.
-        prefix = '''#!/bin/bash
+        # Sample a child's argv and its caller's (the helper's) before exec.
+        self.prefix = prefix = '''#!/bin/bash
 set -euo pipefail
 for pid in "$BASHPID" "$PPID"; do
   if [[ -r /proc/$pid/cmdline ]]; then
@@ -54,19 +53,7 @@ for pid in "$BASHPID" "$PPID"; do
   fi
 done
 '''
-        commands = ['awk', 'cat', 'chmod', 'curl', 'date', 'find', 'head', 'jq', 'ln',
-                    'mkdir', 'mktemp', 'mv', 'rm', 'sha256sum', 'stat', 'timeout', 'touch']
-        for command in commands:
-            target = shutil.which(command, path='/usr/bin')
-            self.assertIsNotNone(target)
-            if command == 'curl':
-                # Real curl, pointed at the loopback server (Bash scripts only).
-                fakenet.write_curl_wrapper(self.bin, target, prefix[len('#!/bin/bash\n'):])
-                continue
-            file = self.bin / command
-            file.write_text(prefix + 'exec ' + target + ' "$@"\n')
-            file.chmod(0o755)
-        # The GeoClue demo samples its caller (the helper) too.
+        # The GeoClue demo is the helper's only child.
         geoclue = self.bin / 'where-am-i'
         geoclue.write_text(prefix + 'printf "%s\\n" "Latitude: ' + LATITUDE +
                            '°" "Longitude: ' + LONGITUDE + '°"\n')
@@ -79,17 +66,14 @@ done
         return subprocess.run(fakenet.helper_command(subcommand, *args), input=payload,
                               text=True, capture_output=True, env=self.env, timeout=15, check=check)
 
-    def assert_private(self, scripts=True):
+    def assert_private(self):
         argv = self.audit.read_bytes().decode()
-        self.assertTrue(argv, 'no child process was sampled')
+        self.assertTrue(argv, 'no process was sampled')
         for secret in [LATITUDE, LONGITUDE, '12.35', '-56.79']:
             self.assertNotIn(secret, argv)
-        if scripts and not fakenet.native():
-            self.assertIn('awk', argv)
-            self.assertIn('jq', argv)
 
     def test_automatic_location_and_forecast_keep_coordinates_out_of_procfs(self):
-        # The no-name response forces the coordinate-label fallback through jq too.
+        # The no-name response forces the coordinate-label fallback.
         location = json.loads(self.run_helper('resolve-location', ['--force']).stdout)
         # Automatic positions are rounded to about 1 km before anything uses them.
         self.assertEqual(location['latitude'], 12.35)
@@ -171,7 +155,6 @@ done
             self.assertIn('error', report)
             self.assertEqual(self.server.paths(), [])
 
-    @unittest.skipUnless(fakenet.native(), 'the place search was curl in Panel.qml before the helper')
     def test_place_search_reads_the_query_from_stdin(self):
         request = json.dumps({'query': 'Bø i Telemark', 'language': 'no'})
         result = self.run_helper('geocode', payload=request)
@@ -212,9 +195,9 @@ done
         weather_started = block('onStarted:', service.index('weatherProc: Process {'))
         save_started = block('onStarted:', panel.index('id: locationSaveProc'), panel)
         # FoamyNative.command starts `bash -c 'exec …'` from PATH: sample the
-        # argv QML built (the Bash scripts' tools are sampled as before).
+        # argv QML built.
         bash = self.bin / 'bash'
-        bash.write_text((self.bin / 'cat').read_text().replace(shutil.which('cat', path='/usr/bin'), '/usr/bin/bash'))
+        bash.write_text(self.prefix + 'exec /usr/bin/bash "$@"\n')
         bash.chmod(0o755)
         app = self.base / 'app'
         app.mkdir()
@@ -291,8 +274,7 @@ ShellRoot {
         self.assertIn('lat=8.765&lon=9.87', self.urls())
         saved = json.loads((self.base / 'state/omarchy/settings/foamy-weather-location.json').read_text())
         self.assertEqual(saved, {'name': 'Pipe Town', 'latitude': 8.7654, 'longitude': 9.8765})
-        # QML always starts the bundled helper.
-        self.assert_private(scripts=False)
+        self.assert_private()
         argv = self.audit.read_text()
         self.assertNotIn('8.7654', argv)
         self.assertNotIn('9.8765', argv)

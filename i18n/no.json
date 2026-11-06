@@ -113,7 +113,6 @@
   "Shown as a still image while animations are off.": "Vises som stillbilde mens animasjoner er slått av.",
   "Updated %1": "Oppdatert %1",
   "Weather in %1": "Været i %1",
-  "Missing required program: %1": "Mangler nødvendig program: %1",
   "Unknown option: %1": "Ukjent valg: %1",
   "Automatic location needs XDG_RUNTIME_DIR": "Automatisk posisjon krever XDG_RUNTIME_DIR",
   "Automatic location storage is not private": "Lagringsmappen for automatisk posisjon er ikke privat",
