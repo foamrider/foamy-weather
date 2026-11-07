@@ -35,9 +35,10 @@ PanelKeyCatcher {
   readonly property color cursorCardColor: Qt.tint(cardColor, FoamyPalette.hoverFill)
   readonly property color selectedCardColor: Qt.tint(FoamyPalette.background, Qt.alpha(Commons.Color.accent, 0.20))
   readonly property color rainColor: FoamyPalette.onSurface(FoamyPalette.info)
+  // The first wet hour as its card labels it ("15:00"), in every language.
   readonly property string hourSummary: {
     for (var i = 0; i < displayHours.length; i++) {
-      if (displayHours[i].precipitation > 0) return FoamyI18n.t("Precipitation from %1", [displayHours[i].time.slice(0, 2)])
+      if (displayHours[i].precipitation > 0) return FoamyI18n.t("Precipitation from %1", [displayHours[i].time])
     }
     return FoamyI18n.t("No precipitation expected")
   }

@@ -120,6 +120,9 @@ ShellRoot {
           "metric strip in the band, band width less its padding: " + (strip && strip.width) + " of " + band.width)
         shell.check(shell.find(a.popup.bodyItem, "weatherMetricStrip") === strip && !shell.inside(strip, shell.find(a.popup.bodyItem, "weatherBody")),
           "no metric row in the body")
+        // The hourly header names the first wet hour as the hour cards do (HH:00).
+        shell.check(/^Precipitation from \d\d:00$/.test(a.popup.bodyItem.hourSummary),
+          "hourly header names the full hour: " + a.popup.bodyItem.hourSummary)
         a.startEditingLocation()
         break
       case 4:
