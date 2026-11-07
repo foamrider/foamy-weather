@@ -118,5 +118,5 @@
   "Automatic location storage is not private": "Automatic location storage is not private",
   "Couldn't save the setting.": "Couldn't save the setting.",
   "This plugin's helper isn't available for this CPU.": "This plugin's helper isn't available for this CPU.",
-  "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)": "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)"
+  "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)": "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)"
 }

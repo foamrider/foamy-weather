@@ -47,4 +47,7 @@ assert.equal(tls.match(/pub const UNSUPPORTED: &str = "([^"]+)";/)[1], Model.HTT
 const FoamyNative = require('../kit/node-loader.cjs').load('FoamyNative');
 for (const key of [...helperKeys, Model.HTTPS_UNSUPPORTED, FoamyNative.UNAVAILABLE_TEXT])
   assert.ok(Object.hasOwn(I.en, key), `missing helper error key: ${key}`);
+// No other (stale) wording of the HTTPS-unsupported message stays in the catalogs.
+for (const key of Object.keys(I.en).filter(k => /^HTTPS isn't supported on this CPU/.test(k)))
+  assert.equal(key, Model.HTTPS_UNSUPPORTED, 'HTTPS-unsupported key matches the kit\'s tls::UNSUPPORTED');
 console.log('Weather i18n tests passed.');

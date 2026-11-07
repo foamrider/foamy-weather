@@ -10,10 +10,10 @@ Requires Omarchy 4.5 (it also loads on 4.0, in English), Bash, and, for
 pasting into the location search, `jq`, GNU coreutils and `wl-paste`
 (wl-clipboard). Forecasts, location search and place names come from the
 plugin's bundled helper, `bin/<arch>/foamy-weather-helper` (static binaries for
-x86-64 and AArch64 Linux; no `curl`, Python or other runtime). Its HTTPS needs a
-CPU with AES and carry-less multiplication instructions (on x86-64 also AVX2,
-BMI2 and ADX: Intel Broadwell, AMD Zen or newer; on AArch64 the ARMv8 crypto
-extensions, so not a Raspberry Pi 4); without them the widget says so instead
+x86-64 and AArch64 Linux; no `curl`, Python or other runtime). Its HTTPS needs
+AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64 (Intel Broadwell, AMD
+Zen or newer), or the crypto extensions on ARMv8 (a Raspberry Pi 5, not a
+Pi 4); without them the widget says HTTPS isn't supported on this CPU instead
 of loading weather. Internet access is required for forecasts and location
 search; `https_proxy`/`all_proxy` (HTTP proxies) and `no_proxy` are honoured.
 For automatic location, install GeoClue (`geoclue`; its `where-am-i` demo is

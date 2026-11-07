@@ -2,7 +2,7 @@
 var HELPER = "foamy-weather-helper"
 // The helper's error key on a CPU without the instructions its HTTPS needs
 // (foamy-helper's tls::UNSUPPORTED).
-var HTTPS_UNSUPPORTED = "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)"
+var HTTPS_UNSUPPORTED = "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)"
 
 function trimmed(value) {
   return String(value === undefined || value === null ? "" : value).replace(/^\s+|\s+$/g, "")

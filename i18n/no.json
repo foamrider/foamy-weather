@@ -118,5 +118,5 @@
   "Automatic location storage is not private": "Lagringsmappen for automatisk posisjon er ikke privat",
   "Couldn't save the setting.": "Kunne ikke lagre innstillingen.",
   "This plugin's helper isn't available for this CPU.": "Hjelpeprogrammet til denne utvidelsen er ikke tilgjengelig for denne prosessoren.",
-  "HTTPS isn't supported on this CPU (it lacks the AES/carry-less multiply instructions foamy helpers need)": "HTTPS støttes ikke på denne prosessoren (den mangler AES- og carry-less multiply-instruksjonene foamy-hjelpeprogrammene trenger)"
+  "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)": "HTTPS støttes ikke på denne prosessoren (foamy-hjelpeprogrammene trenger AES, carry-less multiply, AVX2, BMI2 og ADX på x86-64, eller kryptoutvidelsene på ARMv8)"
 }
