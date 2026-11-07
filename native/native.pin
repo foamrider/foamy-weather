@@ -6,6 +6,6 @@ crate native
 binary foamy-weather-helper
 toolchain 1.99.1
 kit 0.5.2
-source 0795d1c1b780d406781a619681dea5f3ec9b9d93b1b4bd820eca8cfee0e61792
-ab99b6547b610136f64e0691803edd5ef086c391cc97629fc85ef1afcbe08c16  bin/aarch64/foamy-weather-helper
-84c8737b12481ba38d200ebb8b3bb2920d2dc1eade3fed07d705e8947ecadb67  bin/x86_64/foamy-weather-helper
+source 9ca495827c2da8cdb0ddbca342650b6a5774528c22880106a68676525cb2b831
+035e30ba3602d7ae29867d42ddc98400b0bafbaacbe13c563bca9def77cfd199  bin/aarch64/foamy-weather-helper
+0047e066853a7c16ed3ecc1034cd00efac86594d948c49c303efd65eb68d5c3c  bin/x86_64/foamy-weather-helper

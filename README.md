@@ -6,7 +6,7 @@ Current weather and a three-day forecast.
 
 ## Install
 
-Requires Omarchy 4.5 (it also loads on 4.0, in English), Bash, and, for
+Requires Omarchy 4.5, Bash, and, for
 pasting into the location search, `jq`, GNU coreutils and `wl-paste`
 (wl-clipboard). Forecasts, location search and place names come from the
 plugin's bundled helper, `bin/<arch>/foamy-weather-helper` (static binaries for
@@ -130,8 +130,7 @@ Shared components: [foamy-kit](https://github.com/foamrider/foamy-kit) (MIT), co
 Provided **as is**, without warranty or guaranteed support. Use at your own risk.
 
 Language follows **Omarchy → Setup → Language** on Omarchy 4.5 (English and
-Norwegian catalogs; others fall back to English). Omarchy 4.0 displays the
-plugin in English.
+Norwegian catalogs; others fall back to English).
 
 ## Development
 
