@@ -2,7 +2,7 @@
 
 Current weather and a three-day forecast.
 
-![Foamy Weather screenshot](preview.png)
+![Foamy Weather popup with current conditions, a three-day forecast and the hourly forecast](preview.png)
 
 ## Install
 
@@ -36,7 +36,8 @@ Keyboard: arrow keys or `h`/`j`/`k`/`l` move one cursor over the day cards,
 refresh and settings (moving onto a day selects it); Enter activates (with
 nothing selected it opens Settings), `s` opens Settings, `r` refreshes, Esc
 closes or leaves Settings, Tab and Shift+Tab switch to the next bar panel.
-IPC: `omarchy-shell foamy.weather open|close|toggle|edit|refresh`.
+IPC: `omarchy-shell foamy.weather open|close|toggle|edit|refresh` (`show` and
+`hide` are aliases of `open` and `close`).
 
 The header shows the place, the temperature with the condition and today's
 range, and a strip with wind, humidity, the next hour's precipitation and the
@@ -107,7 +108,8 @@ omarchy plugin remove foamy.weather
 ```
 
 When removing an enabled replacement, Omarchy restores `omarchy.weather`.
-Location settings, forecast preferences, and cached forecasts remain on disk.
+Location settings, forecast preferences, and cached forecasts
+(`~/.cache/omarchy-weather/`) remain on disk.
 Some settings are shared with the stock weather plugin; retain them if you
 intend to use it. GeoClue remains installed.
 
@@ -146,6 +148,10 @@ export CARGO_TARGET_DIR=~/.cache/foamy-native/foamy-weather   # never inside the
 ~/GitHub/Personal/foamy-kit/tools/build-native.sh .           # bin/x86_64, bin/aarch64, native.pin
 ~/GitHub/Personal/foamy-kit/tools/build-native.sh . --verify  # clean rebuild, byte-identical
 ```
+
+The animated sky's shaders are compiled: after changing `shaders/*.frag` or
+`*.vert`, run `scripts/build-atmosphere.sh` (needs Qt's `qsb`) and commit the
+`.qsb` files.
 
 The tests (Python 3, Node, `openssl` and qemu-user for AArch64; development
 only) run the helper as a process, `bin/<arch>/foamy-weather-helper` or the
