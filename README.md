@@ -167,9 +167,15 @@ python3 -m unittest tests.test_clipboard tests.test_location_privacy
 bash tests/test-weather-location.sh
 FOAMY_HELPER="[\"$PWD/bin/aarch64/foamy-weather-helper\"]" node tests/weather-fetch.test.js   # and the two above
 bash tests/kit-check.sh
-python3 tests/i18n-runtime.py                  # OMARCHY_PATH=<4.5 tree> for 4.5
+python3 tests/i18n-runtime.py                  # live language switching (OMARCHY_PATH picks another tree)
 python3 tests/runtime.py                       # needs foamy-kit (FOAMY_KIT)
 python3 tests/sky-gpu.py                       # the sky on a GPU (eglfs on a render node); skips without one
 ```
 
-`preview/Preview.qml` renders mock states with the foamy-kit preview harness.
+The offscreen tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
+(`FOAMY_HOST_45` picks another 4.5 tree). `tests/runtime.py` also runs on 4.0
+when `FOAMY_HOST_40` names a 4.0 shell tree; otherwise it prints a SKIP line
+for it.
+
+`preview/Preview.qml` renders mock states with the foamy-kit preview harness
+(`FOAMY_HOST_45=/usr/share/omarchy/shell <foamy-kit>/preview/render.py . --host 4.5`).

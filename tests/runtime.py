@@ -1,7 +1,10 @@
-"""Load the real plugin offscreen on 4.0 and 4.5 (foamy-kit harness) and check
+"""Load the real plugin offscreen on Omarchy 4.5 (foamy-kit harness) and check
 the shared service, leader election, lazy popup body, settings read through
 the schema and saving, moving a legacy searched location to state, report
-retention across a location change, and the sky's motion gates.
+retention across a location change, the hourly header, and the sky's motion
+gates. The host is the installed 4.5 shell (FOAMY_HOST_45 picks another 4.5
+tree); 4.0 runs only when FOAMY_HOST_40 names a 4.0 shell tree, else it
+prints a SKIP line.
 
   python3 tests/runtime.py [--host 4.0|4.5|both]
 
@@ -16,6 +19,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"))
+# 4.5 is the installed shell (FOAMY_HOST_45 overrides it); 4.0 runs only when
+# FOAMY_HOST_40 names a 4.0 shell tree. Set before the harness reads them.
+os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
 import harness  # noqa: E402
 
@@ -196,6 +202,9 @@ def main():
     args = parser.parse_args()
     status = 0
     for host in (["4.0", "4.5"] if args.host == "both" else [args.host]):
+        if host == "4.0" and not os.environ.get("FOAMY_HOST_40"):
+            print("4.0: SKIP (set FOAMY_HOST_40 to a 4.0 shell tree to run it)")
+            continue
         run = harness.Run(host, SHELL, plugin=ROOT, prefix="foamy-weather-runtime-")
         home = run.base / "home"
         legacy = home / ".config/omarchy/weather-location.local.json"
