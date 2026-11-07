@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Networking
 import "kit"
+import "kit/FoamyNative.js" as FoamyNative
 import "kit/FoamyPrefs.js" as Prefs
 import "Model.js" as Model
 import "Preferences.js" as Preferences
@@ -26,9 +27,10 @@ QtObject {
   // Nothing runs until a bar widget exists (and stops if the last one goes).
   readonly property bool active: FoamyShared.memberCount("weather") > 0
 
-  readonly property string fetchScript: localPath(Qt.resolvedUrl("scripts/weather-fetch.sh"))
-  readonly property string locationResolverScript: localPath(Qt.resolvedUrl("scripts/weather-resolve-location.sh"))
-  readonly property string locationScript: localPath(Qt.resolvedUrl("scripts/weather-location.sh"))
+  // The helper is bin/<arch>/foamy-weather-helper under this directory.
+  readonly property string pluginDir: FoamyNative.localPath(Qt.resolvedUrl("."))
+  // No helper for this CPU (exit 126/127): say so once and stop starting it.
+  property bool helperUnavailable: false
   readonly property string settingsRoot: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/omarchy/settings"
 
   // --- report --------------------------------------------------------------------
@@ -107,13 +109,7 @@ QtObject {
   onActiveChanged: if (active) loadLocations()
   Component.onCompleted: if (active) loadLocations()
 
-  function localPath(url) {
-    var value = String(url || "")
-    if (value.indexOf("file://") === 0) value = value.slice(7)
-    return decodeURIComponent(value)
-  }
-
-  // The script (the only writer) first moves a searched place older versions
+  // The helper (the only writer) first moves a searched place older versions
   // kept in config; the files are read again once it has.
   function loadLocations() {
     reloadLocations()
@@ -130,8 +126,22 @@ QtObject {
     errorValues = Array.isArray(values) ? values.map(String) : []
   }
 
+  // A helper exit of 126/127: no binary for this CPU. Report it and stop
+  // the retries; nothing starts the helper again.
+  function helperExited(exitCode) {
+    if (!FoamyNative.unavailable(exitCode)) return false
+    helperUnavailable = true
+    retryTimer.stop()
+    locationRetryTimer.stop()
+    loading = false
+    setError(FoamyNative.UNAVAILABLE_TEXT)
+    dynamicLocationError = FoamyNative.UNAVAILABLE_TEXT
+    dynamicLocationErrorValues = []
+    return true
+  }
+
   function refresh(force) {
-    if (!networkReady) {
+    if (!networkReady || helperUnavailable) {
       loading = false
       return
     }
@@ -148,7 +158,7 @@ QtObject {
     weatherProc.generation = weatherGeneration
     weatherProc.query = coordinateQuery
     weatherProc.locationName = configuredLocation
-    weatherProc.command = force ? [fetchScript, "--force"] : [fetchScript]
+    weatherProc.command = FoamyNative.command(pluginDir, Model.HELPER, force ? ["fetch", "--force"] : ["fetch"])
     // Process arguments are visible to other users through procfs; use the private pipe.
     weatherProc.requestInput = String(configuredLocationState.latitude) + "\n"
       + String(configuredLocationState.longitude) + "\n"
@@ -159,9 +169,10 @@ QtObject {
   }
 
   function resolveLocation(force) {
-    if (!networkReady || !automaticLocation || locationProc.running) return
+    if (!networkReady || !automaticLocation || locationProc.running || helperUnavailable) return
     locationProc.generation = locationGeneration
-    locationProc.command = force ? [locationResolverScript, "--force"] : [locationResolverScript]
+    locationProc.command = FoamyNative.command(pluginDir, Model.HELPER,
+      force ? ["resolve-location", "--force"] : ["resolve-location"])
     if (requestUserAgent)
       locationProc.command = ["env", "WEATHER_LOCATION_USER_AGENT=" + requestUserAgent].concat(locationProc.command)
     locationProc.running = true
@@ -177,7 +188,7 @@ QtObject {
 
   // A finished fetch: ignore it if the location changed meanwhile.
   function finishWeather(raw, generation, query, locationName) {
-    if (generation !== weatherGeneration) {
+    if (generation !== weatherGeneration || helperUnavailable) {
       loading = false
       return
     }
@@ -211,7 +222,7 @@ QtObject {
   }
 
   function finishLocation(raw, generation) {
-    if (generation !== locationGeneration) return
+    if (generation !== locationGeneration || helperUnavailable) return
     var resolved = Model.parseResolvedLocation(raw)
     if (resolved.latitude === null || resolved.longitude === null) {
       dynamicLocationError = resolved.error || "Could not read automatic location"
@@ -295,7 +306,8 @@ QtObject {
       write(requestInput)
       stdinEnabled = false
     }
-    onExited: {
+    onExited: function(exitCode) {
+      if (root.helperExited(exitCode)) return
       if (root.weatherRestart) {
         root.weatherRestart = false
         Qt.callLater(function() { root.refresh(false) })
@@ -308,12 +320,16 @@ QtObject {
   }
 
   property Process locationMigrateProc: Process {
-    command: [root.locationScript, "--migrate"]
-    onExited: root.reloadLocations()
+    command: FoamyNative.command(root.pluginDir, Model.HELPER, ["location", "--migrate"])
+    onExited: function(exitCode) {
+      root.helperExited(exitCode)
+      root.reloadLocations()
+    }
   }
 
   property Process locationProc: Process {
     property int generation: 0
+    onExited: function(exitCode) { root.helperExited(exitCode) }
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.finishLocation(text, root.locationProc.generation)

@@ -6,6 +6,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "kit"
+import "kit/FoamyNative.js" as FoamyNative
 import "kit/FoamyPrefs.js" as Prefs
 import "Model.js" as Model
 import "Preferences.js" as Preferences
@@ -98,7 +99,7 @@ Panel {
   property string geocodePendingQuery: ""
   property string geocodeActiveQuery: ""
   readonly property bool searching: geocodeProc.running
-  readonly property string locationScript: WeatherService.localPath(Qt.resolvedUrl("scripts/weather-location.sh"))
+  readonly property string pluginDir: WeatherService.pluginDir
 
   signal searchCleared()
 
@@ -235,7 +236,7 @@ Panel {
   function pickSuggestion(suggestion) {
     if (!suggestion || savingLocation || automaticLocation) return
     savingLocation = true
-    locationSaveProc.command = [locationScript, "--set"]
+    locationSaveProc.command = FoamyNative.command(pluginDir, Model.HELPER, ["location", "--set"])
     locationSaveProc.requestInput = JSON.stringify({ name: suggestion.name,
       latitude: suggestion.latitude, longitude: suggestion.longitude }) + "\n"
     locationSaveProc.stdinEnabled = true
@@ -262,9 +263,8 @@ Panel {
   function startGeocode() {
     if (!editingLocation || automaticLocation || geocodePendingQuery.length < 2) return
     geocodeActiveQuery = geocodePendingQuery
-    // The typed place goes to curl on stdin, not in its (procfs-visible) argv.
-    geocodeProc.requestInput = 'url = "https://geocoding-api.open-meteo.com/v1/search?name='
-      + encodeURIComponent(geocodeActiveQuery) + "&count=5&language=" + geocodeLanguage() + '&format=json"\n'
+    // The typed place goes to the helper on stdin, not in its (procfs-visible) argv.
+    geocodeProc.requestInput = JSON.stringify({ query: geocodeActiveQuery, language: geocodeLanguage() }) + "\n"
     geocodeProc.stdinEnabled = true
     geocodeProc.running = true
   }
@@ -286,14 +286,16 @@ Panel {
   Process {
     id: geocodeProc
     property string requestInput: ""
-    command: ["curl", "-fsS", "--max-time", "5", "--config", "-"]
+    command: FoamyNative.command(root.pluginDir, Model.HELPER, ["geocode"])
     onStarted: {
       write(requestInput)
       stdinEnabled = false
     }
     onExited: function(exitCode) {
-      if (exitCode !== 0 && root.editingLocation && root.geocodeActiveQuery === root.searchText.trim())
-        root.settingsError = "Could not search for a location"
+      if (!root.editingLocation || root.geocodeActiveQuery !== root.searchText.trim()) return
+      // No helper for this CPU: say so; searches only run on typing, never retried.
+      if (FoamyNative.unavailable(exitCode)) root.settingsError = FoamyNative.UNAVAILABLE_TEXT
+      else if (exitCode !== 0) root.settingsError = "Could not search for a location"
     }
     stdout: StdioCollector {
       waitForEnd: true
@@ -301,9 +303,12 @@ Panel {
         if (!root.editingLocation || root.automaticLocation || root.geocodeActiveQuery !== root.searchText.trim()) return
         try {
           var response = JSON.parse(text)
-          if (response.error) throw new Error("Geocoder rejected query")
         } catch (error) {
-          root.settingsError = "Could not search for a location"
+          if (root.settingsError !== FoamyNative.UNAVAILABLE_TEXT) root.settingsError = "Could not search for a location"
+          return
+        }
+        if (response.error) {
+          root.settingsError = response.error === Model.HTTPS_UNSUPPORTED ? Model.HTTPS_UNSUPPORTED : "Could not search for a location"
           return
         }
         root.locationSuggestions = Model.parseGeocodingResults(text)
@@ -322,6 +327,10 @@ Panel {
     }
     onExited: function(exitCode) {
       root.savingLocation = false
+      if (FoamyNative.unavailable(exitCode)) {
+        root.settingsError = FoamyNative.UNAVAILABLE_TEXT
+        return
+      }
       if (exitCode !== 0) {
         root.settingsError = "Could not save the location"
         return

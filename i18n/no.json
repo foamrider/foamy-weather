@@ -113,9 +113,10 @@
   "Shown as a still image while animations are off.": "Vises som stillbilde mens animasjoner er slått av.",
   "Updated %1": "Oppdatert %1",
   "Weather in %1": "Været i %1",
-  "Missing required program: %1": "Mangler nødvendig program: %1",
   "Unknown option: %1": "Ukjent valg: %1",
   "Automatic location needs XDG_RUNTIME_DIR": "Automatisk posisjon krever XDG_RUNTIME_DIR",
   "Automatic location storage is not private": "Lagringsmappen for automatisk posisjon er ikke privat",
-  "Couldn't save the setting.": "Kunne ikke lagre innstillingen."
+  "Couldn't save the setting.": "Kunne ikke lagre innstillingen.",
+  "This plugin's helper isn't available for this CPU.": "Hjelpeprogrammet til denne utvidelsen er ikke tilgjengelig for denne prosessoren.",
+  "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)": "HTTPS støttes ikke på denne prosessoren (foamy-hjelpeprogrammene trenger AES, carry-less multiply, AVX2, BMI2 og ADX på x86-64, eller kryptoutvidelsene på ARMv8)"
 }
