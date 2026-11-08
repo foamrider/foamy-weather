@@ -109,4 +109,17 @@ const descriptions = [...table.matchAll(/: "([^"]+)"/g)].map(m => m[1])
 assert.ok(descriptions.length > 30, "condition table found")
 for (const key of descriptions) assert.ok(Object.hasOwn(I.no, key), `missing condition translation: ${key}`)
 
+// --- wiring --------------------------------------------------------------------------
+const manifest = require("../manifest.json")
+assert.deepEqual(manifest.kinds, ["service", "bar-widget"])
+assert.equal(manifest.entryPoints.service, "Service.qml")
+assert.notEqual(manifest.keepLoaded, true, "the service reloads with the widgets (one WeatherService)")
+const service = fs.readFileSync(path.join(__dirname, "../Service.qml"), "utf8")
+const panel = fs.readFileSync(path.join(__dirname, "../Panel.qml"), "utf8")
+const functions = source => [...source.slice(source.indexOf("FoamyIpc {")).matchAll(/function (\w+)\(\)/g)].map(m => m[1]).sort()
+assert.deepEqual(functions(service), functions(panel), "both handlers declare the same functions")
+assert.ok(functions(service).includes("current"))
+assert.match(panel, /enabled: member\.isLeader && !WeatherService\.host/, "the Panel's handler yields to the service entry")
+assert.doesNotMatch(service, /setText|atomicWrites|updateEntryInline/, "the service never writes shell.json")
+
 console.log("Weather service tests passed.")

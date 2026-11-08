@@ -1,5 +1,6 @@
 singleton WeatherService 1.0 WeatherService.qml
 BarWidget 1.0 BarWidget.qml
+Service 1.0 Service.qml
 Panel 1.0 Panel.qml
 WeatherBackground 1.0 WeatherBackground.qml
 WeatherConditionIcon 1.0 WeatherConditionIcon.qml

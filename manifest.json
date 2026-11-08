@@ -6,9 +6,11 @@
   "author": "foamrider",
   "description": "MET Norway weather with dynamic location and a three-day forecast",
   "kinds": [
+    "service",
     "bar-widget"
   ],
   "entryPoints": {
+    "service": "Service.qml",
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {

@@ -10,22 +10,37 @@ import "Model.js" as Model
 import "Preferences.js" as Preferences
 
 // Weather state for the whole shell. 4.5 draws a bar (and so a Panel) per
-// monitor; this plugin-local singleton is shared by all of them, so there is
-// one forecast fetch, one GeoClue lookup and one set of location-file
-// watchers per shell. Panels read it, ask it to refresh, and the first live
-// Panel (FoamyMember leader of scope "weather") feeds it the widget settings.
+// monitor; this plugin-local singleton is shared by all of them and by the
+// service entry (Service.qml), so there is one forecast fetch, one GeoClue
+// lookup and one set of location-file watchers per shell. Panels read it, ask
+// it to refresh, and the first live Panel (FoamyMember leader of scope
+// "weather") feeds it the widget settings; without a widget the service
+// entry feeds it the plugin's shell.json entry. It runs while a widget exists
+// or for 30 minutes after the last current() call.
 QtObject {
   id: root
 
   // --- inputs ------------------------------------------------------------------
-  property var settings: ({})
+  // The leader Panel's settings win while a widget exists (they include a
+  // save not yet written back); otherwise the service entry's.
+  property var widgetSettings: ({})
+  property var serviceSettings: ({})
+  readonly property bool widgetPresent: FoamyShared.memberCount("weather") > 0
+  readonly property var settings: widgetPresent ? widgetSettings : serviceSettings
   readonly property var preferences: Prefs.values(Preferences.fields, settings)
   readonly property bool automaticLocation: preferences.automaticLocation
   // Trimmed after the schema read: the scripts only use their identifying
   // default (MET's terms) when the agent is empty, so a blank one must be.
   readonly property string requestUserAgent: preferences.requestUserAgent.trim()
-  // Nothing runs until a bar widget exists (and stops if the last one goes).
-  readonly property bool active: FoamyShared.memberCount("weather") > 0
+  // Nothing runs until a bar widget exists or current() asks (and it stops
+  // when the last widget has gone and no call came for 30 minutes).
+  property bool onDemand: false
+  readonly property bool active: widgetPresent || onDemand
+
+  // The service entry while it is loaded: it owns the IPC target then.
+  property QtObject host: null
+  // The leader Panel, so the service's IPC can open its popup.
+  property QtObject widgetPanel: null
 
   // The helper is bin/<arch>/foamy-weather-helper under this directory.
   readonly property string pluginDir: FoamyNative.localPath(Qt.resolvedUrl("."))
@@ -119,6 +134,38 @@ QtObject {
   function reloadLocations() {
     locationFile.reload()
     localLocationFile.reload()
+  }
+
+  // A current() call: start on demand and stay up 30 minutes after it.
+  function touch() {
+    demandTimer.restart()
+    onDemand = true
+  }
+
+  // Starting, loading, retrying, resolving the automatic location, or
+  // waiting for the network to settle: an answer is on its way.
+  readonly property bool pending: active && (loading || retryTimer.running
+    || locationMigrateProc.running || resolvingLocation || locationRetryTimer.running
+    || (networkConnected && !networkSettled))
+
+  // The `current()` IPC reply (compact JSON; Model.currentReply). Never
+  // waits: an idle service starts and answers "pending" until it has data.
+  function currentReply() {
+    var starting = !active
+    touch()
+    return JSON.stringify(Model.currentReply({
+      report: report,
+      reportCurrent: reportCurrent,
+      units: preferences.units,
+      convert: Preferences.converted,
+      translate: function(key) { return FoamyI18n.t(key) },
+      now: new Date(),
+      // Just started: the bindings above haven't seen the network yet.
+      pending: starting || pending,
+      unsupported: helperUnavailable || errorMessage === Model.HTTPS_UNSUPPORTED,
+      hasCoordinates: hasCoordinates,
+      networkConnected: networkConnected
+    }))
   }
 
   function setError(key, values) {
@@ -286,6 +333,11 @@ QtObject {
     repeat: true
     triggeredOnStart: true
     onTriggered: root.resolveLocation(false)
+  }
+
+  property Timer demandTimer: Timer {
+    interval: 30 * 60 * 1000
+    onTriggered: root.onDemand = false
   }
 
   property Timer retryTimer: Timer {
