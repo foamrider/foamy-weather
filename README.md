@@ -37,7 +37,7 @@ refresh and settings (moving onto a day selects it); Enter activates (with
 nothing selected it opens Settings), `s` opens Settings, `r` refreshes, Esc
 closes or leaves Settings, Tab and Shift+Tab switch to the next bar panel.
 IPC: `omarchy-shell foamy.weather open|close|toggle|edit|refresh` (`show` and
-`hide` are aliases of `open` and `close`).
+`hide` are aliases of `open` and `close`), and `current` (below).
 
 The header shows the place, the temperature with the condition and today's
 range, and a strip with wind, humidity, the next hour's precipitation and the
@@ -50,10 +50,57 @@ popup is open; with Omarchy's animations off (reduced motion) it is a still
 image, and with CPU rendering or the `animations` setting off the plain header
 is shown.
 
+## Service and `current()`
+
+The plugin also has a `service` entry (`Service.qml`), so other plugins (the
+Foamy lock screen's weather) can ask for the current weather without a bar
+widget. Omarchy loads it whenever `foamy.weather` is enabled: through its bar
+widget, or through an entry in `plugins[]` in `shell.json` with the keys from
+[Settings](#settings):
+
+```json
+{ "id": "foamy.weather", "units": "metric", "automaticLocation": false, "requestUserAgent": "" }
+```
+
+The service does nothing until it is asked. A `current()` call starts it, and
+it stops 30 minutes after the last call; a bar widget keeps it running as
+before. Widgets and the service share one forecast, one set of requests and
+one IPC target: the service answers `foamy.weather` while it is loaded (the
+popup functions reach the widget's popup and do nothing without one), and the
+widget answers only when no service is loaded. Settings come from the widget
+while one exists, else from the `plugins[]` entry, else from the bar entry.
+The service only reads `shell.json`.
+
+`omarchy-shell foamy.weather current` (or, from a plugin, foamy-kit's
+`FoamyPeerIpc`) returns one line of JSON and never waits for the network:
+
+```json
+{"ok":true,"temperature":6,"unit":"C","code":"lightrain","condition":"Light rain","high":10,"low":2,"location":"Bergen","updatedAt":"2026-11-08T08:30:00.000Z"}
+{"ok":false,"reason":"pending"}
+```
+
+| Field | Meaning |
+|---|---|
+| `temperature`, `high`, `low` | Whole degrees in `unit`; `high`/`low` are today's range (`null` when unknown) |
+| `unit` | `"C"` (`units: "metric"`) or `"F"` (`"imperial"`) |
+| `code` | MET Norway's symbol code (`[a-z0-9_]`, at most 48 characters, such as `partlycloudy_night`); anything else reads as `cloudy` |
+| `condition` | The condition in the shell's language (Omarchy → Setup → Language), at most 64 characters |
+| `location` | The forecast's place name, at most 80 characters (show it only if your user wants it) |
+| `updatedAt` | When the forecast was downloaded, UTC ISO 8601 (`""` when unknown); the data may be hours old when MET or the network is unavailable |
+
+`reason` is `pending` (starting, loading, retrying or resolving the automatic
+location: ask again in a few seconds), `no-location` (no place chosen, or
+automatic location failed), `offline`, `unsupported` (no helper or HTTPS for
+this CPU) or `error` (the download failed). Strings are single-line plain
+text. A cold start answers `pending` for about 2 seconds while the network
+settles, then until the download ends (up to about 15 seconds; a cached
+forecast answers at once).
+
 ## Settings
 
-Settings live in the widget's entry in `shell.json`. The popup sets the first
-three; set the others with `omarchy bar set foamy.weather <key> <json> --json`.
+Settings live in the widget's entry in `shell.json` (or the `plugins[]` entry,
+for the service). The popup sets the first three; set the others with
+`omarchy bar set foamy.weather <key> <json> --json`.
 A stored value outside these rules (a string, or out of range) reads as the
 default, as the popup would refuse it.
 
@@ -98,7 +145,8 @@ left alone.
   Requests wait briefly after the network connects and retry temporary
   failures up to three times with increasing delays.
 - One shell runs one set of requests and timers, however many monitors show
-  the bar.
+  the bar. Without a bar widget nothing is requested until a `current()` call,
+  and nothing after 30 minutes without one.
 - Location-search paste is limited to 16 KiB and two seconds.
 
 ## Remove
@@ -161,7 +209,7 @@ is sent to the real services, and all files go to temporary HOME/XDG
 directories.
 
 ```sh
-for t in tests/*.test.js tests/i18n.test.cjs; do node "$t"; done
+for t in tests/*.test.js tests/i18n.test.cjs; do node "$t"; done   # service.test.js: current() and the entry
 python3 -m unittest tests.test_clipboard tests.test_location_privacy
 bash tests/test-weather-location.sh
 FOAMY_HELPER="[\"$PWD/bin/aarch64/foamy-weather-helper\"]" node tests/weather-fetch.test.js   # and the two above
