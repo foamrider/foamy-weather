@@ -1,8 +1,9 @@
 """Load the real plugin offscreen on Omarchy 4.5 (foamy-kit harness) and check
 the shared service, leader election, lazy popup body, settings read through
 the schema and saving, moving a legacy searched location to state, report
-retention across a location change, the hourly header, and the sky's motion
-gates. The host is the installed 4.5 shell (FOAMY_HOST_45 picks another 4.5
+retention across a location change, the hourly header, the sky's motion
+gates, and the service entry beside the widgets (one IPC handler, settings
+from its shell.json entry, current() on demand and its idle timeout). The host is the installed 4.5 shell (FOAMY_HOST_45 picks another 4.5
 tree); 4.0 runs only when FOAMY_HOST_40 names a 4.0 shell tree, else it
 prints a SKIP line.
 
@@ -32,12 +33,19 @@ import "harness"
 import "plugin" as Weather
 import "plugin/kit" as Kit
 import "plugin/Model.js" as Model
+import "plugin/kit/FoamyIpcResolver.js" as Resolver
 
 ShellRoot {
   id: shell
   property int failures: 0
   property int step: 0
   property var widgets: []
+  property var service: null
+  function handlers() { return Resolver.handlersFor(shell, "foamy.weather") }
+  function current() {
+    var result = Resolver.call(shell, "foamy.weather", "current", [])
+    return result.ran ? JSON.parse(result.output) : null
+  }
   function check(ok, what) { if (!ok) { failures++; console.log("FOAMY FAIL " + what) } else console.log("FOAMY OK " + what) }
   function panel(i) { return widgets[i] ? widgets[i].panel : null }
 
@@ -46,6 +54,9 @@ ShellRoot {
   Item { id: holder }
 
   Component.onCompleted: {
+    // NetworkManager is the host's (the system bus): keep the network
+    // "settling" so nothing is fetched from MET Norway for real.
+    Weather.WeatherService.networkSettleTimer.interval = 24 * 60 * 60 * 1000
     var component = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
     if (component.status !== Component.Ready) { console.log("FOAMY FAIL load " + component.errorString()); Qt.quit(); return }
     // Out-of-range or mistyped stored values read as their defaults; the agent is trimmed.
@@ -53,6 +64,10 @@ ShellRoot {
                      locationRefreshMinutes: "45", requestUserAgent: "  example-agent/1.0  " }
     widgets = [component.createObject(holder, { bar: barA, moduleName: "foamy.weather", settings: settings }),
                component.createObject(holder, { bar: barB, moduleName: "foamy.weather", settings: settings })]
+    // The service entry, as the shell makes it: once, with no parent.
+    var entry = Qt.createComponent(Qt.resolvedUrl("plugin/Service.qml"))
+    if (entry.status !== Component.Ready) { console.log("FOAMY FAIL load service " + entry.errorString()); Qt.quit(); return }
+    service = entry.createObject(null)
     tick.start()
   }
 
@@ -73,6 +88,14 @@ ShellRoot {
         shell.check(Kit.FoamyShared.memberCount("weather") === 2, "two members in scope weather")
         shell.check(Weather.WeatherService.active, "service active with members")
         shell.check(Weather.WeatherService.settings.units === "metric", "leader handed its settings to the service")
+        shell.check(Weather.WeatherService.serviceSettings.units === "imperial", "service entry read its plugins[] entry")
+        shell.check(Weather.WeatherService.host === shell.service && Weather.WeatherService.widgetPanel === a,
+          "service entry and leader Panel registered")
+        shell.check(shell.handlers().length === 1 && shell.handlers()[0] === shell.service.ipc,
+          "one live foamy.weather handler, the service entry's: " + shell.handlers().length)
+        var early = shell.current()
+        shell.check(early && early.ok === false && ["pending", "offline"].indexOf(early.reason) !== -1,
+          "current() before any report: " + JSON.stringify(early))
         var prefs = Weather.WeatherService.preferences
         shell.check(prefs.refreshMinutes === 30 && Weather.WeatherService.refreshTimer.interval === 30 * 60 * 1000
           && prefs.locationRefreshMinutes === 15, "invalid intervals read as the defaults: " + JSON.stringify(prefs))
@@ -94,6 +117,10 @@ ShellRoot {
       case 1:
         shell.check(a.barLabel === b.barLabel && a.barLabel.indexOf("13°") > 0, "both bars show the shared report: " + a.barLabel)
         shell.check(a.reportCurrent && a.reportLocation === "Bergen", "report is current for Bergen")
+        var now = shell.current()
+        shell.check(now && now.ok === true && now.temperature === 13 && now.unit === "C" && now.code === "rain"
+          && now.condition === "Rain" && now.location === "Bergen" && now.high === 13 && now.low === 13
+          && !isNaN(Date.parse(now.updatedAt)), "current() answers from the shared report in the widget's units: " + JSON.stringify(now))
         // Moving keeps the old report under its own name while the new one loads.
         Weather.WeatherService.localLocationState = { name: "Oslo", latitude: 59.91, longitude: 10.75 }
         break
@@ -170,10 +197,57 @@ ShellRoot {
         shell.check(!sky.animating, "sky still under reduced motion")
         sky.animate = true
         shell.check(sky.animating === sky.drawable && sky.drawable === (sky.supported && sky.conditions.available), "sky animates only when it can draw")
+        // As if the 30 minutes since the current() calls above had passed.
+        Weather.WeatherService.demandTimer.stop()
+        Weather.WeatherService.onDemand = false
         shell.widgets[1].destroy()
         break
       case 7:
         shell.check(!Weather.WeatherService.active, "service idles with no widgets")
+        shell.check(Weather.WeatherService.settings.units === "imperial", "without a widget the plugins[] entry applies")
+        shell.check(shell.handlers().length === 1 && shell.handlers()[0] === shell.service.ipc, "service handler still answers")
+        // An idle service starts on a call and says so.
+        var cold = shell.current()
+        shell.check(cold && cold.ok === false && cold.reason === "pending", "cold current() is pending: " + JSON.stringify(cold))
+        shell.check(Weather.WeatherService.active && Weather.WeatherService.onDemand, "current() starts the service")
+        shell.check(Weather.WeatherService.demandTimer.running && Weather.WeatherService.demandTimer.interval === 30 * 60 * 1000,
+          "it stays up 30 minutes after the call")
+        shell.service.ipc.open()
+        shell.service.ipc.toggle()
+        shell.service.ipc.edit()
+        break
+      case 8:
+        var warm = shell.current()
+        // Offline without NetworkManager's connection; else still settling.
+        shell.check(warm && warm.ok === false && warm.reason === (Weather.WeatherService.networkConnected ? "pending" : "offline"),
+          "no report for the place yet: " + JSON.stringify(warm))
+        var report = JSON.parse(JSON.stringify(shell.sample))
+        report.query = Weather.WeatherService.coordinateQuery
+        report.locationName = "Oslo"
+        Weather.WeatherService.report = report
+        var hot = shell.current()
+        shell.check(hot && hot.ok === true && hot.unit === "F" && hot.temperature === 56 && hot.location === "Oslo",
+          "current() in the entry's units: " + JSON.stringify(hot))
+        // The idle timeout (shortened here) stops it again.
+        Weather.WeatherService.demandTimer.interval = 100
+        Weather.WeatherService.touch()
+        break
+      case 9:
+        shell.check(!Weather.WeatherService.active && !Weather.WeatherService.onDemand, "service idles after the timeout")
+        shell.check(Weather.WeatherService.report !== null, "the last report is kept while idle")
+        shell.service.destroy()
+        break
+      case 10:
+        shell.check(Weather.WeatherService.host === null && shell.handlers().length === 0, "no handler without service or widget")
+        // A host that loads no service: the leader Panel answers instead.
+        var lone = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
+        shell.widgets = [lone.createObject(holder, { bar: barA, moduleName: "foamy.weather", settings: { units: "metric" } })]
+        break
+      case 11:
+        shell.check(shell.handlers().length === 1 && shell.handlers()[0] !== null, "the Panel's handler takes the target")
+        var fallback = shell.current()
+        shell.check(fallback && fallback.ok === true && fallback.unit === "C", "and answers current(): " + JSON.stringify(fallback))
+        shell.widgets[0].destroy()
         console.log(shell.failures === 0 ? "FOAMY DONE" : "FOAMY FAIL " + shell.failures + " failures")
         Qt.quit()
       }
@@ -210,6 +284,8 @@ def main():
         legacy = home / ".config/omarchy/weather-location.local.json"
         legacy.parent.mkdir(parents=True, exist_ok=True)
         legacy.write_text('{"name":"Legacy Town","latitude":69.65,"longitude":18.96}\n')
+        (home / ".config/omarchy/shell.json").write_text(
+            '{"version":1,"plugins":[{"id":"foamy.weather","units":"imperial","language":"nb"}]}\n')
         run.run(timeout=60)
         checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
         state = home / ".local/state/omarchy/settings/foamy-weather-location.json"

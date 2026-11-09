@@ -27,7 +27,7 @@ pub mod keys {
 
 /// MET's terms ask for an agent that identifies the application.
 pub const DEFAULT_USER_AGENT: &str =
-    "foamy-weather/1.3.0 (+https://github.com/foamrider/foamy-weather)";
+    "foamy-weather/1.4.0 (+https://github.com/foamrider/foamy-weather)";
 
 /// `{"error":key,"values":[…]}`, the scripts' `json_error`.
 pub fn error_json(key: &str, values: &[&str]) -> String {
