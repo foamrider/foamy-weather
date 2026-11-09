@@ -358,6 +358,107 @@ function formatIsoTime(value) {
   return String(date.getHours()).padStart(2, "0") + ":" + String(date.getMinutes()).padStart(2, "0")
 }
 
+// --- the service entry (Service.qml) -----------------------------------------------
+
+// The plugin's own settings in shell.json for the service entry: the
+// `plugins[]` entry, else the bar layout entry (the same keys either way).
+// { valid: false } when the file can't be read as a shell config, so the
+// service keeps what it had; { valid: true, found: false, settings: {} }
+// when there is no entry.
+function pluginEntry(raw, id) {
+  var config
+  try {
+    config = JSON.parse(String(raw || ""))
+  } catch (e) {
+    return { valid: false, found: false, settings: {} }
+  }
+  if (!config || typeof config !== "object" || Array.isArray(config))
+    return { valid: false, found: false, settings: {} }
+  var wanted = String(id || "")
+  var matches = function(entry) {
+    return !!entry && typeof entry === "object" && !Array.isArray(entry) && entry.id === wanted
+  }
+  var copy = function(entry) {
+    var settings = {}
+    for (var key in entry) if (key !== "id") settings[key] = entry[key]
+    return { valid: true, found: true, settings: settings }
+  }
+  var plugins = Array.isArray(config.plugins) ? config.plugins : []
+  for (var i = 0; i < plugins.length; i++) if (matches(plugins[i])) return copy(plugins[i])
+  var layout = config.bar && typeof config.bar === "object" ? config.bar.layout : null
+  if (layout && typeof layout === "object") {
+    for (var section in layout) {
+      var entries = Array.isArray(layout[section]) ? layout[section] : []
+      for (var j = 0; j < entries.length; j++) if (matches(entries[j])) return copy(entries[j])
+    }
+  }
+  return { valid: true, found: false, settings: {} }
+}
+
+// Longest strings in a current() reply, in code points.
+var REPLY_LIMITS = { code: 48, condition: 64, location: 80 }
+
+// One line of plain text, at most `limit` code points: control and line
+// separator characters become spaces, runs of spaces collapse.
+function plainText(value, limit) {
+  var text = String(value === undefined || value === null ? "" : value)
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    .replace(/\s+/g, " ")
+  text = trimmed(text)
+  var points = Array.from(text)
+  return points.length > limit ? trimmed(points.slice(0, limit).join("")) : text
+}
+
+function wholeOrNull(value) {
+  return typeof value === "number" && isFinite(value) ? Math.round(value) : null
+}
+
+// The `current()` IPC reply, compact JSON-ready. `state`:
+//   report, reportCurrent      WeatherService's last report and whether it is
+//                              for the configured place
+//   units                      "metric" | "imperial"
+//   convert(celsius, units)    Preferences.converted (rounds)
+//   translate(key)             FoamyI18n.t
+//   now                        Date, for today's range
+//   pending                    the service is starting, loading or retrying
+//   unsupported                no helper or no HTTPS for this CPU
+//   hasCoordinates, networkConnected
+// Answers { ok: true, temperature, unit, code, condition, high, low,
+// location, updatedAt } or { ok: false, reason } with reason "pending",
+// "no-location", "offline", "unsupported" or "error".
+function currentReply(state) {
+  state = state || {}
+  var report = state.report
+  var point = report && state.reportCurrent ? currentCondition(report) : null
+  if (point && point.temperature !== null) {
+    var units = state.units === "imperial" ? "imperial" : "metric"
+    var convert = typeof state.convert === "function" ? state.convert : function(value) { return Math.round(value) }
+    var translate = typeof state.translate === "function" ? state.translate : function(key) { return key }
+    var days = forecastDays(report, state.now instanceof Date ? state.now : new Date())
+    var today = days.length ? days[0] : null
+    var code = String(point.symbol || "")
+    if (!/^[a-z0-9_]+$/.test(code) || code.length > REPLY_LIMITS.code) code = "cloudy"
+    var fetched = new Date(report.fetchedAt)
+    return {
+      ok: true,
+      temperature: wholeOrNull(convert(point.temperature, units)),
+      unit: units === "imperial" ? "F" : "C",
+      code: code,
+      condition: plainText(translate(descriptionForSymbol(code)), REPLY_LIMITS.condition),
+      high: today && today.high !== null ? wholeOrNull(convert(today.high, units)) : null,
+      low: today && today.low !== null ? wholeOrNull(convert(today.low, units)) : null,
+      location: plainText(report.locationName, REPLY_LIMITS.location),
+      updatedAt: isNaN(fetched.getTime()) ? "" : fetched.toISOString()
+    }
+  }
+  var reason = "error"
+  if (state.unsupported) reason = "unsupported"
+  else if (state.pending) reason = "pending"
+  else if (!state.hasCoordinates) reason = "no-location"
+  else if (!state.networkConnected) reason = "offline"
+  return { ok: false, reason: reason }
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     HELPER: HELPER,
@@ -375,6 +476,10 @@ if (typeof module !== "undefined") {
     descriptionForSymbol: descriptionForSymbol,
     iconForSymbol: iconForSymbol,
     windDirection: windDirection,
-    formatIsoTime: formatIsoTime
+    formatIsoTime: formatIsoTime,
+    pluginEntry: pluginEntry,
+    REPLY_LIMITS: REPLY_LIMITS,
+    plainText: plainText,
+    currentReply: currentReply
   }
 }

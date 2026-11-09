@@ -32,11 +32,18 @@ Panel {
 
   // --- shared state ----------------------------------------------------------------
   FoamyMember { id: member; scope: "weather"; demanding: root.opened }
-  // Every instance shows the same widget entry; the leader hands its settings over.
+  // Every instance shows the same widget entry; the leader hands its settings
+  // over, and itself, so the service entry's IPC can open its popup.
   Binding {
     target: WeatherService
-    property: "settings"
+    property: "widgetSettings"
     value: prefs.effectiveSettings
+    when: member.isLeader
+  }
+  Binding {
+    target: WeatherService
+    property: "widgetPanel"
+    value: root
     when: member.isLeader
   }
 
@@ -340,9 +347,12 @@ Panel {
     }
   }
 
+  // The service entry (Service.qml) owns the target while it is loaded and
+  // calls this Panel for the popup; this handler answers only without it
+  // (a host that loads no service, or the service failed to load).
   FoamyIpc {
     target: "foamy.weather"
-    enabled: member.isLeader
+    enabled: member.isLeader && !WeatherService.host
 
     function open(): void { root.openFromHotkey() }
     function close(): void { root.close() }
@@ -352,6 +362,7 @@ Panel {
     // Open first: the settings page is built with the popup body.
     function edit(): void { root.openFromHotkey(); root.startEditingLocation() }
     function refresh(): void { root.refresh(true) }
+    function current(): string { return WeatherService.currentReply() }
   }
 
   FoamyPopup {

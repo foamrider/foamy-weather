@@ -62,4 +62,4 @@ function age(value, now, tr, tn) {
   return tn("%1 hours ago", Math.floor(minutes / 60))
 }
 
-if (typeof module !== "undefined") module.exports = { fields, temperature, temperatureValue, precipitation, wind, age }
+if (typeof module !== "undefined") module.exports = { fields, converted, temperature, temperatureValue, precipitation, wind, age }
