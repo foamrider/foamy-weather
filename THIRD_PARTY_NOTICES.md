@@ -8,7 +8,7 @@ How the lists are made:
 
 - **Crates**: `cargo tree --locked --target <triple> --edges normal,no-proc-macro` for each musl target, with the features the build uses. Build-dependencies and proc-macro crates (with their own dependencies) run on the build host and are not linked. `Cargo.lock` also lists crates for other platforms (windows-*, …) and for features this build does not enable (ring, aws-lc, …): those are not compiled and not listed. A crate whose code link-time optimization drops entirely is still listed. Every crate source path embedded in the binaries (panic locations) is checked to be in the list when the file is generated.
 - **Crate notices**: read from the crate archive (`.crate`) whose SHA-256 is the `Cargo.lock` checksum shown: its `LICENSE*`, `LICENCE*`, `COPYING*`, `NOTICE*`, `COPYRIGHT*` and `UNLICENSE` files and `license-file`, plus the copyright lines and SPDX ids at the top of its source files (outside tests, benches and examples). For a crate that ships no license file, the standard text of each license its SPDX expression names is reproduced instead, and marked so.
-- **Toolchain**: the Rust standard library and its crates (notices from the pinned toolchain's `share/doc/rust/COPYRIGHT-library.html`), musl libc and the C runtime objects of Rust's self-contained musl linking, and LLVM's libunwind and crtbegin/crtend (from the toolchain's `COPYRIGHT.html`).
+- **Toolchain**: the Rust standard library (in-tree notices from the pinned toolchain's `share/doc/rust/COPYRIGHT-library.html`) and its crates.io dependencies at the versions of the toolchain's `library/Cargo.lock` (the notice file's entry for that version, else the `.crate` archive with the lock's checksum), musl libc and the C runtime objects of Rust's self-contained musl linking, and LLVM's libunwind and crtbegin/crtend (from the toolchain's `COPYRIGHT.html`).
 
 ## `foamy-weather-helper`
 
@@ -68,17 +68,18 @@ First-party crates (not third-party code, listed for completeness):
 | Component | Version | License | Arches | Notices |
 |---|---|---|---|---|
 | Rust standard library (`alloc`, `compiler_builtins`, `core`, `panic_abort`, `rustc_std_workspace_alloc`, `rustc_std_workspace_core`, `rustc_std_workspace_std`, `std`, `std_detect`, `sysroot`, `unwind`) | 1.99.1 | Apache-2.0 OR MIT (exceptions in the notice) | both | [N57](#n57), [N22](#n22), [N58](#n58), [N24](#n24), [N59](#n59) |
-| `cfg-if` (a dependency of the standard library) (listed by the toolchain; the version in the binary is not visible) | 1.0.4 | MIT OR Apache-2.0 | both | [N4](#n4), [N9](#n9) |
-| `gimli` (a dependency of the standard library) | 0.34.0 | MIT OR Apache-2.0 | both | [N4](#n4), [N60](#n60) |
-| `hashbrown` (a dependency of the standard library) | 0.17.1 | MIT OR Apache-2.0 | both | [N4](#n4), [N61](#n61) |
-| `libc` (a dependency of the standard library) (listed by the toolchain; the version in the binary is not visible) | 0.2.184 | MIT OR Apache-2.0 | both | [N26](#n26), [N27](#n27) |
-| `libc` (a dependency of the standard library) (listed by the toolchain; the version in the binary is not visible) | 0.2.189 | MIT OR Apache-2.0 | both | [N26](#n26), [N27](#n27) |
-| `memchr` (a dependency of the standard library) (listed by the toolchain; the version in the binary is not visible) | 2.8.0 | Unlicense OR MIT | both | [N31](#n31), [N32](#n32) |
+| `addr2line` (a dependency of the standard library; notices from the crates.io archive, sha256 `e567177890eb1617b1f774005b66b26b2377afd138a2ca37aae7d8f0c81429d4`) | 0.27.1 | Apache-2.0 OR MIT | both | [N4](#n4), [N60](#n60) |
+| `adler2` (a dependency of the standard library; the version (from the toolchain's library/Cargo.lock) is not visible in the binaries; notices from the crates.io archive, sha256 `320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa`) | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | both | [N1](#n1), [N2](#n2), [N3](#n3) |
+| `cfg-if` (a dependency of the standard library; the version (from the toolchain's library/Cargo.lock) is not visible in the binaries) | 1.0.4 | MIT OR Apache-2.0 | both | [N4](#n4), [N9](#n9) |
+| `gimli` (a dependency of the standard library) | 0.34.0 | MIT OR Apache-2.0 | both | [N4](#n4), [N61](#n61) |
+| `hashbrown` (a dependency of the standard library) | 0.17.1 | MIT OR Apache-2.0 | both | [N4](#n4), [N62](#n62) |
+| `libc` (a dependency of the standard library; the version (from the toolchain's library/Cargo.lock) is not visible in the binaries) | 0.2.189 | MIT OR Apache-2.0 | both | [N26](#n26), [N27](#n27) |
+| `memchr` (a dependency of the standard library; the version (from the toolchain's library/Cargo.lock) is not visible in the binaries; notices from the crates.io archive, sha256 `cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98`) | 2.8.3 | Unlicense OR MIT | both | [N30](#n30), [N31](#n31), [N32](#n32) |
+| `miniz_oxide` (a dependency of the standard library; notices from the crates.io archive, sha256 `b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c`) | 0.9.1 | MIT OR Zlib OR Apache-2.0 | both | [N33](#n33), [N34](#n34), [N35](#n35), [N36](#n36) |
+| `object` (a dependency of the standard library; the version (from the toolchain's library/Cargo.lock) is not visible in the binaries; notices from the crates.io archive, sha256 `2e5a6c098c7a3b6547378093f5cc30bc54fd361ce711e05293a5cc589562739b`) | 0.39.1 | Apache-2.0 OR MIT | both | [N4](#n4), [N63](#n63) |
 | `rustc-demangle` (a dependency of the standard library) | 0.1.28 | MIT/Apache-2.0 | both | [N4](#n4), [N9](#n9) |
-| musl libc (`libc.a`) and its C runtime objects (`crt1.o`, `rcrt1.o`, `Scrt1.o`, `crti.o`, `crtn.o`), from Rust's self-contained musl | 1.2.5 | MIT | both | [N62](#n62) |
-| LLVM libunwind (`libunwind.a`) and compiler-rt `crtbegin.o`/`crtend.o`, from Rust's self-contained musl | as shipped with Rust 1.99.1 | Apache-2.0 WITH LLVM-exception AND NCSA | both | [N63](#n63), [N22](#n22), [N64](#n64), [N65](#n65) |
-
-The toolchain's notice file has no entry for these standard library dependencies, so their notices are not reproduced here: `addr2line` 0.27.1, `adler2` (version not visible in the binaries), `miniz_oxide` 0.9.1, `object` (version not visible in the binaries).
+| musl libc (`libc.a`) and its C runtime objects (`crt1.o`, `rcrt1.o`, `Scrt1.o`, `crti.o`, `crtn.o`), from Rust's self-contained musl | 1.2.5 | MIT | both | [N64](#n64) |
+| LLVM libunwind (`libunwind.a`) and compiler-rt `crtbegin.o`/`crtend.o`, from Rust's self-contained musl | as shipped with Rust 1.99.1 | Apache-2.0 WITH LLVM-exception AND NCSA | both | [N65](#n65), [N22](#n22), [N66](#n66), [N67](#n67) |
 
 Not linked (sysroot crates a release helper does not use): `getopts`: used only by the test harness; `panic_unwind`: the release profile is panic = "abort" (panic_abort is linked instead); `proc_macro`: the compiler's proc-macro bridge; `profiler_builtins`: only for -C instrument-coverage / profile-generate builds; `rustc_literal_escaper`: used only by proc_macro; `test`: the test harness.
 
@@ -86,7 +87,7 @@ Not linked (sysroot crates a release helper does not use): `getopts`: used only 
 
 ### N1
 
-Shipped by: adler2 2.0.1: `LICENSE-0BSD`.
+Shipped by: adler2 2.0.1: `LICENSE-0BSD`; Rust 1.99.1 standard library dependency adler2 2.0.1: `LICENSE-0BSD`.
 
 ```text
 Copyright (C) Jonas Schievink <jonasschievink@gmail.com>
@@ -105,7 +106,7 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ### N2
 
-Shipped by: adler2 2.0.1: `LICENSE-APACHE`.
+Shipped by: adler2 2.0.1: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency adler2 2.0.1: `LICENSE-APACHE`.
 
 ```text
                               Apache License
@@ -313,7 +314,7 @@ limitations under the License.
 
 ### N3
 
-Shipped by: adler2 2.0.1: `LICENSE-MIT`; itoa 1.0.18: `LICENSE-MIT`; linux-raw-sys 0.12.1: `LICENSE-MIT`; once_cell 1.21.4: `LICENSE-MIT`; rustix 1.1.6: `LICENSE-MIT`; serde 1.0.229: `LICENSE-MIT`; serde_core 1.0.229: `LICENSE-MIT`; serde_json 1.0.154: `LICENSE-MIT`; zmij 1.0.23: `LICENSE-MIT`.
+Shipped by: adler2 2.0.1: `LICENSE-MIT`; itoa 1.0.18: `LICENSE-MIT`; linux-raw-sys 0.12.1: `LICENSE-MIT`; once_cell 1.21.4: `LICENSE-MIT`; rustix 1.1.6: `LICENSE-MIT`; serde 1.0.229: `LICENSE-MIT`; serde_core 1.0.229: `LICENSE-MIT`; serde_json 1.0.154: `LICENSE-MIT`; zmij 1.0.23: `LICENSE-MIT`; Rust 1.99.1 standard library dependency adler2 2.0.1: `LICENSE-MIT`.
 
 ```text
 Permission is hereby granted, free of charge, to any
@@ -343,7 +344,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### N4
 
-Shipped by: bitflags 2.13.2: `LICENSE-APACHE`; cfg-if 1.0.5: `LICENSE-APACHE`; flate2 1.1.11: `LICENSE-APACHE`; linux-raw-sys 0.12.1: `LICENSE-APACHE`; once_cell 1.21.4: `LICENSE-APACHE`; openssl-probe 0.2.2: `LICENSE-APACHE`; rustix 1.1.6: `LICENSE-APACHE`; rustls 0.23.46: `LICENSE-APACHE`; rustls-native-certs 0.8.5: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency cfg-if 1.0.4: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency gimli 0.34.0: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency hashbrown 0.17.1: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency rustc-demangle 0.1.28: `LICENSE-APACHE`.
+Shipped by: bitflags 2.13.2: `LICENSE-APACHE`; cfg-if 1.0.5: `LICENSE-APACHE`; flate2 1.1.11: `LICENSE-APACHE`; linux-raw-sys 0.12.1: `LICENSE-APACHE`; once_cell 1.21.4: `LICENSE-APACHE`; openssl-probe 0.2.2: `LICENSE-APACHE`; rustix 1.1.6: `LICENSE-APACHE`; rustls 0.23.46: `LICENSE-APACHE`; rustls-native-certs 0.8.5: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency addr2line 0.27.1: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency cfg-if 1.0.4: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency gimli 0.34.0: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency hashbrown 0.17.1: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency object 0.39.1: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency rustc-demangle 0.1.28: `LICENSE-APACHE`.
 
 ```text
                               Apache License
@@ -1686,7 +1687,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ### N26
 
-Shipped by: itoa 1.0.18: `LICENSE-APACHE`; libc 0.2.191: `LICENSE-APACHE`; serde 1.0.229: `LICENSE-APACHE`; serde_core 1.0.229: `LICENSE-APACHE`; serde_json 1.0.154: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency libc 0.2.184: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency libc 0.2.189: `LICENSE-APACHE`.
+Shipped by: itoa 1.0.18: `LICENSE-APACHE`; libc 0.2.191: `LICENSE-APACHE`; serde 1.0.229: `LICENSE-APACHE`; serde_core 1.0.229: `LICENSE-APACHE`; serde_json 1.0.154: `LICENSE-APACHE`; Rust 1.99.1 standard library dependency libc 0.2.189: `LICENSE-APACHE`.
 
 ```text
                               Apache License
@@ -1869,7 +1870,7 @@ END OF TERMS AND CONDITIONS
 
 ### N27
 
-Shipped by: libc 0.2.191: `LICENSE-MIT`; Rust 1.99.1 standard library dependency libc 0.2.184: `LICENSE-MIT`; Rust 1.99.1 standard library dependency libc 0.2.189: `LICENSE-MIT`.
+Shipped by: libc 0.2.191: `LICENSE-MIT`; Rust 1.99.1 standard library dependency libc 0.2.189: `LICENSE-MIT`.
 
 ```text
 Copyright (c) The Rust Project Developers
@@ -2162,7 +2163,7 @@ Software.
 
 ### N30
 
-Shipped by: memchr 2.8.3: `COPYING`.
+Shipped by: memchr 2.8.3: `COPYING`; Rust 1.99.1 standard library dependency memchr 2.8.3: `COPYING`.
 
 ```text
 This project is dual-licensed under the Unlicense and MIT licenses.
@@ -2172,7 +2173,7 @@ You may use this code under the terms of either license.
 
 ### N31
 
-Shipped by: memchr 2.8.3: `LICENSE-MIT`; Rust 1.99.1 standard library dependency memchr 2.8.0: `LICENSE-MIT`.
+Shipped by: memchr 2.8.3: `LICENSE-MIT`; Rust 1.99.1 standard library dependency memchr 2.8.3: `LICENSE-MIT`.
 
 ```text
 The MIT License (MIT)
@@ -2200,7 +2201,7 @@ THE SOFTWARE.
 
 ### N32
 
-Shipped by: memchr 2.8.3: `UNLICENSE`; Rust 1.99.1 standard library dependency memchr 2.8.0: `UNLICENSE`.
+Shipped by: memchr 2.8.3: `UNLICENSE`; Rust 1.99.1 standard library dependency memchr 2.8.3: `UNLICENSE`.
 
 ```text
 This is free and unencumbered software released into the public domain.
@@ -2231,7 +2232,7 @@ For more information, please refer to <http://unlicense.org/>
 
 ### N33
 
-Shipped by: miniz_oxide 0.9.1: `LICENSE`.
+Shipped by: miniz_oxide 0.9.1: `LICENSE`; Rust 1.99.1 standard library dependency miniz_oxide 0.9.1: `LICENSE`.
 
 ```text
 MIT License
@@ -2263,7 +2264,7 @@ SOFTWARE.
 
 ### N34
 
-Shipped by: miniz_oxide 0.9.1: `LICENSE-APACHE.md`.
+Shipped by: miniz_oxide 0.9.1: `LICENSE-APACHE.md`; Rust 1.99.1 standard library dependency miniz_oxide 0.9.1: `LICENSE-APACHE.md`.
 
 ```text
                                  Apache License
@@ -2446,7 +2447,7 @@ Shipped by: miniz_oxide 0.9.1: `LICENSE-APACHE.md`.
 
 ### N35
 
-Shipped by: miniz_oxide 0.9.1: `LICENSE-MIT.md`.
+Shipped by: miniz_oxide 0.9.1: `LICENSE-MIT.md`; Rust 1.99.1 standard library dependency miniz_oxide 0.9.1: `LICENSE-MIT.md`.
 
 ```text
 MIT License
@@ -2477,7 +2478,7 @@ SOFTWARE.
 
 ### N36
 
-Shipped by: miniz_oxide 0.9.1: `LICENSE-ZLIB.md`.
+Shipped by: miniz_oxide 0.9.1: `LICENSE-ZLIB.md`; Rust 1.99.1 standard library dependency miniz_oxide 0.9.1: `LICENSE-ZLIB.md`.
 
 ```text
 Copyright 2013-2014 RAD Game Tools and Valve Software
@@ -3645,6 +3646,38 @@ authorization of the copyright holder.
 
 ### N60
 
+Shipped by: Rust 1.99.1 standard library dependency addr2line 0.27.1: `LICENSE-MIT`.
+
+```text
+Copyright (c) 2016-2018 The gimli Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### N61
+
 Shipped by: Rust 1.99.1 standard library dependency gimli 0.34.0: `LICENSE-MIT`.
 
 ```text
@@ -3675,7 +3708,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### N61
+### N62
 
 Shipped by: Rust 1.99.1 standard library dependency hashbrown 0.17.1: `LICENSE-MIT`.
 
@@ -3707,7 +3740,39 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### N62
+### N63
+
+Shipped by: Rust 1.99.1 standard library dependency object 0.39.1: `LICENSE-MIT`.
+
+```text
+Copyright (c) 2015 The Gimli Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+### N64
 
 Shipped by: musl libc 1.2.5: `COPYRIGHT`.
 
@@ -3907,7 +3972,7 @@ permissive licensing, and of not having licensing issues being an
 obstacle to adoption, that text has been removed.
 ```
 
-### N63
+### N65
 
 Shipped by: Rust 1.99.1: COPYRIGHT.html (src/llvm-project).
 
@@ -3922,7 +3987,7 @@ Copyright: 2003-2019 by the contributors listed in CREDITS.TXT (https://github.c
 Copyright: 2010 Apple Inc
 ```
 
-### N64
+### N66
 
 Shipped by: Rust 1.99.1: standard LLVM-exception text (share/doc/rust/licenses).
 
@@ -3944,7 +4009,7 @@ Shipped by: Rust 1.99.1: standard LLVM-exception text (share/doc/rust/licenses).
    Software.
 ```
 
-### N65
+### N67
 
 Shipped by: Rust 1.99.1: standard NCSA text (share/doc/rust/licenses).
 
