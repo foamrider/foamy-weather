@@ -105,6 +105,10 @@ Panel {
   property bool searchCompleted: false
   property string geocodePendingQuery: ""
   property string geocodeActiveQuery: ""
+  // Bumped whenever the search text changes or is cleared. A search started
+  // under an older value was cancelled: its exit and output are dropped, even
+  // when the new text trims to the same query (a trailing space).
+  property int geocodeGeneration: 0
   readonly property bool searching: geocodeProc.running
   readonly property string pluginDir: WeatherService.pluginDir
 
@@ -194,6 +198,7 @@ Panel {
   function retrySave() { prefs.retry() }
 
   function clearSearch() {
+    geocodeGeneration++
     geocodeDebounce.stop()
     geocodeProc.running = false
     geocodePendingQuery = ""
@@ -218,6 +223,7 @@ Panel {
 
   // The search field's text changed by typing or paste.
   function searchEdited(text) {
+    geocodeGeneration++
     geocodeDebounce.stop()
     geocodeProc.running = false
     locationSuggestions = []
@@ -270,6 +276,7 @@ Panel {
   function startGeocode() {
     if (!editingLocation || automaticLocation || geocodePendingQuery.length < 2) return
     geocodeActiveQuery = geocodePendingQuery
+    geocodeProc.generation = geocodeGeneration
     // The typed place goes to the helper on stdin, not in its (procfs-visible) argv.
     geocodeProc.requestInput = JSON.stringify({ query: geocodeActiveQuery, language: geocodeLanguage() }) + "\n"
     geocodeProc.stdinEnabled = true
@@ -293,13 +300,16 @@ Panel {
   Process {
     id: geocodeProc
     property string requestInput: ""
+    property int generation: 0
+    readonly property bool wanted: generation === root.geocodeGeneration && root.editingLocation
+      && !root.automaticLocation && root.geocodeActiveQuery === root.searchText.trim()
     command: FoamyNative.command(root.pluginDir, Model.HELPER, ["geocode"])
     onStarted: {
       write(requestInput)
       stdinEnabled = false
     }
     onExited: function(exitCode) {
-      if (!root.editingLocation || root.geocodeActiveQuery !== root.searchText.trim()) return
+      if (!geocodeProc.wanted) return
       // No helper for this CPU: say so; searches only run on typing, never retried.
       if (FoamyNative.unavailable(exitCode)) root.settingsError = FoamyNative.UNAVAILABLE_TEXT
       else if (exitCode !== 0) root.settingsError = "Could not search for a location"
@@ -307,7 +317,7 @@ Panel {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        if (!root.editingLocation || root.automaticLocation || root.geocodeActiveQuery !== root.searchText.trim()) return
+        if (!geocodeProc.wanted) return
         try {
           var response = JSON.parse(text)
         } catch (error) {

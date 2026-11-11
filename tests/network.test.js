@@ -123,9 +123,10 @@ test("the geocoder query goes to the helper on stdin, not argv", () => {
   assert.match(proc, /FoamyNative\.command\(root\.pluginDir, Model\.HELPER, \["geocode"\]\)/);
   assert.doesNotMatch(proc, /geocoding-api|query/);
   const c = controller({ editingLocation:true, automaticLocation:false, geocodePendingQuery:"Bø i Telemark",
-    geocodeActiveQuery:"", geocodeProc:{running:false}, geocodeLanguage:()=>"no" }, ["startGeocode"], "panel");
+    geocodeActiveQuery:"", geocodeGeneration:3, geocodeProc:{running:false}, geocodeLanguage:()=>"no" }, ["startGeocode"], "panel");
   c.startGeocode();
   assert.equal(c.geocodeProc.running, true); assert.equal(c.geocodeProc.stdinEnabled, true);
+  assert.equal(c.geocodeProc.generation, 3, "the run carries the search generation");
   assert.deepEqual(JSON.parse(c.geocodeProc.requestInput), { query: "Bø i Telemark", language: "no" });
   assert.ok(c.geocodeProc.requestInput.endsWith("\n"));
 });

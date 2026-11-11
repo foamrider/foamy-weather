@@ -268,6 +268,7 @@ FOAMY_HELPER="[\"$PWD/bin/aarch64/foamy-weather-helper\"]" node tests/weather-fe
 bash tests/kit-check.sh
 python3 tests/i18n-runtime.py                  # live language switching (OMARCHY_PATH picks another tree)
 python3 tests/runtime.py                       # needs foamy-kit (FOAMY_KIT)
+python3 tests/search-runtime.py                # the location search; needs foamy-kit
 python3 tests/sky-gpu.py                       # the sky on a GPU (eglfs on a render node); skips without one
 ```
 
