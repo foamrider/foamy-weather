@@ -93,8 +93,9 @@ location: ask again in a few seconds), `no-location` (no place chosen, or
 automatic location failed), `offline`, `unsupported` (no helper or HTTPS for
 this CPU) or `error` (the download failed). Strings are single-line plain
 text. A cold start answers `pending` for about 2 seconds while the network
-settles, then until the download ends (up to about 15 seconds; a cached
-forecast answers at once).
+settles, then until the download ends: usually a second or two, at most
+about 35 seconds when MET is slow (10 s for the forecast, then up to 8 s for
+each of three sunrise requests); a cached forecast answers at once.
 
 ## Settings
 
