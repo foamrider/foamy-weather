@@ -51,19 +51,31 @@ function parseResolvedLocation(raw) {
   }
 }
 
+// The search asks Open-Meteo for five places (count=5). Its reply is
+// untrusted: keep at most that many, each with a string name and the numeric
+// in-range coordinates `location --set` accepts, so every listed place can be
+// saved.
+var SEARCH_RESULTS = 5
+
+function inRange(value, bound) {
+  return typeof value === "number" && isFinite(value) && value >= -bound && value <= bound
+}
+
 function parseGeocodingResults(raw) {
   try {
     var data = JSON.parse(String(raw || "{}"))
-    var results = data.results
-    if (!results || !results.length) return []
+    var results = data && Array.isArray(data.results) ? data.results : []
 
     var out = []
-    for (var i = 0; i < results.length; i++) {
+    for (var i = 0; i < results.length && out.length < SEARCH_RESULTS; i++) {
       var result = results[i]
-      if (!result || !result.name || result.latitude === undefined || result.longitude === undefined) continue
-      var region = [result.admin1, result.country].filter(function(part) { return !!part }).join(", ")
+      if (!result || typeof result !== "object" || typeof result.name !== "string" || !result.name
+        || !inRange(result.latitude, 90) || !inRange(result.longitude, 180)) continue
+      var region = [result.admin1, result.country].filter(function(part) {
+        return typeof part === "string" && part !== ""
+      }).join(", ")
       out.push({
-        name: String(result.name),
+        name: result.name,
         description: region,
         latitude: result.latitude,
         longitude: result.longitude
