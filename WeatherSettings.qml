@@ -1,8 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import qs.Commons
-import qs.Commons as Commons
-import qs.Ui
 import "kit"
 
 // Weather settings: location (automatic or a searched place) and display.

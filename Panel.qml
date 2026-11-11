@@ -2,8 +2,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import qs.Commons
-import qs.Commons as Commons
 import qs.Ui
 import "kit"
 import "kit/FoamyNative.js" as FoamyNative
