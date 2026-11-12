@@ -23,7 +23,7 @@ run() {
   "$@" || status=1
 }
 skip() { echo "SKIP $*"; }
-# test_clipboard's QML part starts a Quickshell.
+# test_clipboard's QML part and test_location_privacy's QML test start a Quickshell.
 ((ci)) && export FOAMY_TESTS_NO_QUICKSHELL=1
 
 # The helper tests, on this machine's helper and then the other one.

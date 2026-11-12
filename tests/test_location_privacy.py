@@ -197,6 +197,9 @@ done
         self.assertEqual(self.run_helper("geocode", ["extra"], check=False).returncode, 2)
 
     def test_quickshell_sends_fresh_stdin_on_repeated_fetch_and_location_save(self):
+        # The test runs the host's Quickshell at /usr/bin/qs; CI runners have none.
+        if os.environ.get("FOAMY_TESTS_NO_QUICKSHELL") or not os.access("/usr/bin/qs", os.X_OK):
+            self.skipTest("Quickshell (/usr/bin/qs) is unavailable or not wanted (tests/suite.sh --ci)")
         service = (ROOT / "WeatherService.qml").read_text()
         panel = (ROOT / "Panel.qml").read_text()
 
