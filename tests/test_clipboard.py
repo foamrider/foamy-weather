@@ -144,8 +144,8 @@ class ClipboardTests(unittest.TestCase):
 
     def test_qml_editing_and_paste(self):
         runner = shutil.which("qs")
-        if not runner:
-            self.skipTest("Quickshell is unavailable")
+        if not runner or os.environ.get("FOAMY_TESTS_NO_QUICKSHELL"):
+            self.skipTest("Quickshell is unavailable or not wanted (tests/suite.sh --ci)")
         sys.path.insert(0, str(KIT / "preview"))
         import hostenv
         # Quickshell's statically registered Io plugin requires the qs executable.
