@@ -14,7 +14,7 @@ Item {
   property var previewStates: ["forecast", "loading-new-location", "stale", "empty", "error", "settings", "settings-search", "settings-automatic", "sky-fog", "sky-overcast-day", "sky-live", "sky-sun", "sky-snow", "sky-night", "sky-storm", "long-text"]
   property string previewState: "forecast"
   property int settleMs: 700
-  readonly property Item popup: previewPopup
+  readonly property var popup: previewPopup
 
   // Sky states: the band over different MET conditions (Bergen). The
   // offscreen software renderer draws no shader, so there they show the

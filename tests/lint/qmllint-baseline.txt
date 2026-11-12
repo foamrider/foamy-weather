@@ -182,5 +182,4 @@ WeatherView.qml: unqualified: Unqualified access | text: modelData.time
 WeatherView.qml: unqualified: Unqualified access | text: modelData.value
 WeatherView.qml: unqualified: Unqualified access | text: view.precipitation(modelData.precipitation)
 WeatherView.qml: unqualified: Unqualified access | text: view.temperature(modelData.temperature)
-preview/Preview.qml: incompatible-type: Cannot assign binding of type FoamyPopup to QQuickItem | readonly property Item popup: previewPopup
 preview/Preview.qml: unqualified: Unqualified access | controller: mock
