@@ -3,30 +3,38 @@ the shared service, leader election, lazy popup body, settings read through
 the schema and saving, moving a legacy searched location to state, report
 retention across a location change, the hourly header, the sky's motion
 gates, and the service entry beside the widgets (one IPC handler, settings
-from its shell.json entry, current() on demand and its idle timeout). The host is the installed 4.5 shell (FOAMY_HOST_45 picks another 4.5
-tree); 4.0 runs only when FOAMY_HOST_40 names a 4.0 shell tree, else it
-prints a SKIP line.
+from its shell.json entry, current() on demand and its idle timeout). The
+host is the installed 4.5 shell (FOAMY_HOST_45 picks another 4.5 tree).
 
-  python3 tests/runtime.py [--host 4.0|4.5|both]
+  python3 tests/runtime.py
 
-Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit). Temporary
-HOME/XDG dirs; automatic location is off and the network never settles, so
-only the location script runs (to migrate) and no network request starts.
+Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit), dbus-daemon,
+dbus-python and PyGObject. Temporary HOME/XDG dirs; automatic location is off
+and the network is down (the kit's fake NetworkManager, preview/fake_nm.py,
+reports no connectivity), so only the location helper runs (to migrate) and
+no network request starts. The helper is still pointed at the loopback
+stand-in (tests/fakenet.py, also needs openssl), which must see no request:
+a service that fetched anyway fails the test instead of reaching MET Norway.
 """
+
 import argparse
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"))
-# 4.5 is the installed shell (FOAMY_HOST_45 overrides it); 4.0 runs only when
-# FOAMY_HOST_40 names a 4.0 shell tree. Set before the harness reads them.
+# 4.5 is the installed shell (FOAMY_HOST_45 overrides it). Set before the
+# harness reads it.
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
+sys.path.insert(0, str(ROOT / "tests"))
+import fake_nm  # noqa: E402
+import fakenet  # noqa: E402
 import harness  # noqa: E402
 
-SHELL = r'''
+SHELL = r"""
 import QtQuick
 import Quickshell
 import "harness"
@@ -52,11 +60,11 @@ ShellRoot {
   MockBar { id: barA }
   MockBar { id: barB }
   Item { id: holder }
+  FoamyWait { id: wait }
 
   Component.onCompleted: {
-    // NetworkManager is the host's (the system bus): keep the network
-    // "settling" so nothing is fetched from MET Norway for real.
-    Weather.WeatherService.networkSettleTimer.interval = 24 * 60 * 60 * 1000
+    // Offline (the fake NetworkManager, main() below): nothing is fetched.
+    // tests/fetch-runtime.py covers the fetch.
     var component = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
     if (component.status !== Component.Ready) { console.log("FOAMY FAIL load " + component.errorString()); Qt.quit(); return }
     // Out-of-range or mistyped stored values read as their defaults; the agent is trimmed.
@@ -68,7 +76,13 @@ ShellRoot {
     var entry = Qt.createComponent(Qt.resolvedUrl("plugin/Service.qml"))
     if (entry.status !== Component.Ready) { console.log("FOAMY FAIL load service " + entry.errorString()); Qt.quit(); return }
     service = entry.createObject(null)
-    tick.start()
+    // The steps start once the helper has migrated the seeded legacy file
+    // (a real process, slow on a loaded machine); each later step only waits
+    // for QML to settle.
+    wait.waitFor(function() {
+      return !Weather.WeatherService.locationMigrateProc.running
+        && Weather.WeatherService.localLocationState.name === "Legacy Town"
+    }, 30000, function() { tick.start() }, "the legacy location is migrated")
   }
 
   readonly property var sample: ({ forecast: { type: "Feature", properties: { timeseries: [
@@ -106,7 +120,7 @@ ShellRoot {
           && Weather.WeatherService.localLocationState.latitude === 69.65, "legacy searched location migrated and read: "
           + JSON.stringify(Weather.WeatherService.localLocationState))
         shell.check(!a.popup.bodyItem && !b.popup.bodyItem, "popup bodies are lazy")
-        shell.check(!Weather.WeatherService.weatherProc.running && !Weather.WeatherService.locationProc.running, "no fetch before the network settles")
+        shell.check(!Weather.WeatherService.weatherProc.running && !Weather.WeatherService.locationProc.running, "no fetch while offline")
         // A report for the configured coordinates, shared by every instance.
         Weather.WeatherService.localLocationState = { name: "Bergen", latitude: 60.39, longitude: 5.32 }
         var report = JSON.parse(JSON.stringify(shell.sample))
@@ -218,8 +232,7 @@ ShellRoot {
         break
       case 8:
         var warm = shell.current()
-        // Offline without NetworkManager's connection; else still settling.
-        shell.check(warm && warm.ok === false && warm.reason === (Weather.WeatherService.networkConnected ? "pending" : "offline"),
+        shell.check(warm && warm.ok === false && warm.reason === "offline",
           "no report for the place yet: " + JSON.stringify(warm))
         var report = JSON.parse(JSON.stringify(shell.sample))
         report.query = Weather.WeatherService.coordinateQuery
@@ -267,39 +280,47 @@ ShellRoot {
     return null
   }
 }
-'''
+"""
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="both", choices=["4.0", "4.5", "both"])
-    args = parser.parse_args()
-    status = 0
-    for host in (["4.0", "4.5"] if args.host == "both" else [args.host]):
-        if host == "4.0" and not os.environ.get("FOAMY_HOST_40"):
-            print("4.0: SKIP (set FOAMY_HOST_40 to a 4.0 shell tree to run it)")
-            continue
-        run = harness.Run(host, SHELL, plugin=ROOT, prefix="foamy-weather-runtime-")
-        home = run.base / "home"
-        legacy = home / ".config/omarchy/weather-location.local.json"
-        legacy.parent.mkdir(parents=True, exist_ok=True)
-        legacy.write_text('{"name":"Legacy Town","latitude":69.65,"longitude":18.96}\n')
-        (home / ".config/omarchy/shell.json").write_text(
-            '{"version":1,"plugins":[{"id":"foamy.weather","units":"imperial","language":"nb"}]}\n')
-        run.run(timeout=60)
-        checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
-        state = home / ".local/state/omarchy/settings/foamy-weather-location.json"
-        if legacy.exists() or not state.exists() or (state.stat().st_mode & 0o777) != 0o600:
-            run.ok = False
-            print(f"{host}: the legacy location was not moved to an owner-only state file")
-        if run.ok:
-            print(f"{host}: {len(checks)} checks passed")
-            run.cleanup()
-        else:
-            status = 1
-            print(f"{host}: FAILED (log {run.base}/qs.log)")
-            print("\n".join(run.failures() or run.log.splitlines()[-30:]))
-    sys.exit(status)
+    argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args()
+    host = "4.5"
+    run = harness.Run(host, SHELL, plugin=ROOT, prefix="foamy-weather-runtime-", system_bus="private")
+    connectivity = run.base / "connectivity"
+    fake_nm.set_connectivity(connectivity, fake_nm.NONE)
+    home = run.base / "home"
+    legacy = home / ".config/omarchy/weather-location.local.json"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text('{"name":"Legacy Town","latitude":69.65,"longitude":18.96}\n')
+    (home / ".config/omarchy/shell.json").write_text(
+        '{"version":1,"plugins":[{"id":"foamy.weather","units":"imperial","language":"nb"}]}\n'
+    )
+    with tempfile.TemporaryDirectory(prefix="foamy-weather-runtime-") as scratch:
+        certs = fakenet.make_certs(Path(scratch) / "tls")
+        with fakenet.Server(certs) as server:
+            run.env = fakenet.network_env(run.env, server.port, certs["ca"])
+            # The fake goes on the bus before qs: Quickshell looks for
+            # NetworkManager only once, at start.
+            run.start_buses()
+            with fake_nm.start(run.system_bus_address, connectivity):
+                run.run(timeout=60)
+            requests = server.paths()
+    if requests:
+        run.ok = False
+        print(f"{host}: requests went out while offline: {requests}")
+    checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
+    state = home / ".local/state/omarchy/settings/foamy-weather-location.json"
+    if legacy.exists() or not state.exists() or (state.stat().st_mode & 0o777) != 0o600:
+        run.ok = False
+        print(f"{host}: the legacy location was not moved to an owner-only state file")
+    if run.ok:
+        print(f"{host}: {len(checks)} checks passed")
+        run.cleanup()
+        sys.exit(0)
+    print(f"{host}: FAILED (log {run.base}/qs.log)")
+    print("\n".join(run.failures() or run.log.splitlines()[-30:]))
+    sys.exit(1)
 
 
 if __name__ == "__main__":

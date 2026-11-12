@@ -1,4 +1,4 @@
-//! `location --set | --clear | --migrate`: the searched place
+//! `location --set | --migrate`: the searched place
 //! (weather-location.sh).
 
 use std::ffi::OsString;
@@ -14,8 +14,7 @@ use serde_json::Value;
 use crate::util;
 
 const MAX_LOCATION: u64 = 64 * 1024;
-const USAGE: &str =
-    "Usage: foamy-weather-helper location --set < location.json | --clear | --migrate";
+const USAGE: &str = "Usage: foamy-weather-helper location --set < location.json | --migrate";
 
 struct Paths {
     state_root: PathBuf,
@@ -107,10 +106,15 @@ fn migrate(paths: &Paths) -> ExitCode {
     if !is_file(&paths.legacy) {
         return ExitCode::SUCCESS;
     }
-    // A valid state file wins and the legacy file goes; an invalid state
-    // file, or an invalid legacy file, is left alone.
+    // A valid state file wins. The legacy file goes only when it holds the
+    // same place (it was migrated already): a different one, say rewritten by
+    // an older version after a downgrade, is the user's and stays, and so do
+    // an invalid legacy file and anything next to an invalid state file.
     if util::exists(&paths.location) {
-        if read_location_file(&paths.location).is_some() && util::remove(&paths.legacy).is_err() {
+        if let Some(state) = read_location_file(&paths.location)
+            && read_location_file(&paths.legacy).as_deref() == Some(state.as_str())
+            && util::remove(&paths.legacy).is_err()
+        {
             return ExitCode::FAILURE;
         }
         return ExitCode::SUCCESS;
@@ -122,7 +126,8 @@ fn migrate(paths: &Paths) -> ExitCode {
         return ExitCode::FAILURE;
     }
     let line = format!("{location}\n");
-    // Lost a race with --set: its pick wins, the next run removes the legacy file.
+    // Lost a race with --set: its pick wins; the next run removes the legacy
+    // file only if it holds the same place.
     if write_no_clobber(&paths.state_root, &paths.location, line.as_bytes()).is_err() {
         return ExitCode::SUCCESS;
     }
@@ -159,15 +164,6 @@ pub fn main(args: &[OsString]) -> ExitCode {
     let paths = paths();
     let action = args.first().map(|a| a.as_os_str());
     match action.and_then(|a| a.to_str()) {
-        Some("--clear") => {
-            let location = util::remove(&paths.location);
-            let legacy = util::remove(&paths.legacy);
-            if location.is_ok() && legacy.is_ok() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            }
-        }
         Some("--migrate") if args.len() == 1 => migrate(&paths),
         Some("--set") if args.len() == 1 => set(&paths),
         _ => {

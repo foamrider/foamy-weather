@@ -1,0 +1,185 @@
+# qmllint findings accepted when the check was adopted. tests/validate.sh fails on any
+# finding not listed here. Regenerate with `tests/validate.sh --update-baseline qmllint`
+# only to drop fixed entries or after reviewing every added one; never to pass a check.
+BarWidget.qml: missing-property: Member "anchorItem" not found on type QQuickLoader::item with type QObject | target.anchorItem = button
+BarWidget.qml: missing-property: Member "bar" not found on type QQuickLoader::item with type QObject | target.bar = root.bar
+BarWidget.qml: missing-property: Member "barLabel" not found on type "QObject" | text: root.vertical ? "" : (panelLoader.item ? panelLoader.item.barLabel : "\u{f0590} --")
+BarWidget.qml: missing-property: Member "close" not found on type "QObject" | if (panelLoader.item && panelLoader.item.close)
+BarWidget.qml: missing-property: Member "close" not found on type "QObject" | panelLoader.item.close()
+BarWidget.qml: missing-property: Member "closeForPopoutSwitch" not found on type "QObject" | panelLoader.item.closeForPopoutSwitch()
+BarWidget.qml: missing-property: Member "conditionIcon" not found on type "QObject" | text: panelLoader.item ? panelLoader.item.conditionIcon : "\u{f0590}"
+BarWidget.qml: missing-property: Member "hostWidget" not found on type QQuickLoader::item with type QObject | target.hostWidget = root
+BarWidget.qml: missing-property: Member "notifySummary" not found on type "QObject" | if (panelLoader.item && panelLoader.item.notifySummary)
+BarWidget.qml: missing-property: Member "notifySummary" not found on type "QObject" | panelLoader.item.notifySummary()
+BarWidget.qml: missing-property: Member "openFromHotkey" not found on type "QObject" | if (panelLoader.item && panelLoader.item.openFromHotkey)
+BarWidget.qml: missing-property: Member "openFromHotkey" not found on type "QObject" | panelLoader.item.openFromHotkey()
+BarWidget.qml: missing-property: Member "opened" not found on type "QObject" | readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+BarWidget.qml: missing-property: Member "popoutSwitchClosing" not found on type "QObject" | readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
+BarWidget.qml: missing-property: Member "refresh" not found on type "QObject" | if (panelLoader.item && panelLoader.item.refresh)
+BarWidget.qml: missing-property: Member "refresh" not found on type "QObject" | panelLoader.item.refresh(force === true)
+BarWidget.qml: missing-property: Member "settings" not found on type QQuickLoader::item with type QObject | target.settings = root.settings
+BarWidget.qml: missing-property: Member "toggle" not found on type "QObject" | if (panelLoader.item && panelLoader.item.toggle)
+BarWidget.qml: missing-property: Member "toggle" not found on type "QObject" | panelLoader.item.toggle()
+Panel.qml: missing-property: Member "centerHoverRevealSuppressed" not found on type Panel::bar with type QObject | root.bar.centerHoverRevealSuppressed = value
+Panel.qml: missing-property: Member "setCenterHoverRevealSuppressed" not found on type "QObject" | if (root.bar && typeof root.bar.setCenterHoverRevealSuppressed === "function")
+Panel.qml: missing-property: Member "setCenterHoverRevealSuppressed" not found on type "QObject" | root.bar.setCenterHoverRevealSuppressed(value)
+Panel.qml: missing-property: Member "switchPanelFrom" not found on type "QObject" | if (root.bar && typeof root.bar.switchPanelFrom === "function")
+Panel.qml: missing-property: Member "switchPanelFrom" not found on type "QObject" | return root.bar.switchPanelFrom(root.barIdentity, direction)
+WeatherBackground.qml: missing-property: Member "background" not found on type "QObject" | property color surfaceColor: Commons.Color.popups.background
+WeatherConditionIcon.qml: missing-property: Member "text" not found on type "QObject" | shadowColor: Commons.Color.popups.text
+WeatherService.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | var response = JSON.parse(raw || "{}")
+WeatherService.qml: import: Type WeatherService not declared as singleton in qmldir but using pragma Singleton
+WeatherService.qml: missing-property: Member "generation" not found on type "Process" | onStreamFinished: root.finishLocation(text, root.locationProc.generation)
+WeatherService.qml: missing-property: Member "generation" not found on type "Process" | onStreamFinished: root.finishWeather(text, root.weatherProc.generation, root.weatherProc.query, root.weatherProc.locationName)
+WeatherService.qml: missing-property: Member "generation" not found on type WeatherService::locationProc with type Process | locationProc.generation = locationGeneration
+WeatherService.qml: missing-property: Member "generation" not found on type WeatherService::weatherProc with type Process | weatherProc.generation = weatherGeneration
+WeatherService.qml: missing-property: Member "locationName" not found on type "Process" | onStreamFinished: root.finishWeather(text, root.weatherProc.generation, root.weatherProc.query, root.weatherProc.locationName)
+WeatherService.qml: missing-property: Member "locationName" not found on type WeatherService::weatherProc with type Process | weatherProc.locationName = configuredLocation
+WeatherService.qml: missing-property: Member "query" not found on type "Process" | onStreamFinished: root.finishWeather(text, root.weatherProc.generation, root.weatherProc.query, root.weatherProc.locationName)
+WeatherService.qml: missing-property: Member "query" not found on type WeatherService::weatherProc with type Process | weatherProc.query = coordinateQuery
+WeatherService.qml: missing-property: Member "requestInput" not found on type WeatherService::weatherProc with type Process | weatherProc.requestInput = String(configuredLocationState.latitude) + "\n" + String(configuredLocationState.longitude) + "\n"
+WeatherSettings.qml: missing-property: Member "animations" not found on type "QObject" | checked: page.c.animations
+WeatherSettings.qml: missing-property: Member "animations" not found on type "QObject" | onClicked: page.c.savePreference("animations", !page.c.animations)
+WeatherSettings.qml: missing-property: Member "automaticLocation" not found on type "QObject" | checked: page.c.automaticLocation
+WeatherSettings.qml: missing-property: Member "automaticLocation" not found on type "QObject" | model: page.c.automaticLocation ? [] : page.c.locationSuggestions
+WeatherSettings.qml: missing-property: Member "automaticLocation" not found on type "QObject" | onClicked: page.c.savePreference("automaticLocation", !page.c.automaticLocation)
+WeatherSettings.qml: missing-property: Member "automaticLocation" not found on type "QObject" | visible: !page.c.automaticLocation
+WeatherSettings.qml: missing-property: Member "automaticLocation" not found on type "QObject" | visible: !page.c.automaticLocation && (page.c.searching || page.c.searchCompleted && !page.c.locationSuggestions.length)
+WeatherSettings.qml: missing-property: Member "automaticLocation" not found on type "QObject" | visible: page.c.automaticLocation && (page.c.resolvingLocation || page.c.dynamicLocationErrorText !== "")
+WeatherSettings.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
+WeatherSettings.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+WeatherSettings.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+WeatherSettings.qml: missing-property: Member "canRetry" not found on type "QObject" | retryable: c.canRetry
+WeatherSettings.qml: missing-property: Member "cancelEditingLocation" not found on type "QObject" | onBack: c.cancelEditingLocation()
+WeatherSettings.qml: missing-property: Member "cancelEditingLocation" not found on type "QObject" | page.c.cancelEditingLocation()
+WeatherSettings.qml: missing-property: Member "commitLocation" not found on type "QObject" | page.c.commitLocation()
+WeatherSettings.qml: missing-property: Member "dynamicLocationErrorText" not found on type "QObject" | text: page.c.resolvingLocation ? FoamyI18n.t("Finding location…") : page.c.dynamicLocationErrorText
+WeatherSettings.qml: missing-property: Member "dynamicLocationErrorText" not found on type "QObject" | visible: page.c.automaticLocation && (page.c.resolvingLocation || page.c.dynamicLocationErrorText !== "")
+WeatherSettings.qml: missing-property: Member "locationSuggestions" not found on type "QObject" | model: page.c.automaticLocation ? [] : page.c.locationSuggestions
+WeatherSettings.qml: missing-property: Member "locationSuggestions" not found on type "QObject" | visible: !page.c.automaticLocation && (page.c.searching || page.c.searchCompleted && !page.c.locationSuggestions.length)
+WeatherSettings.qml: missing-property: Member "moveSuggestion" not found on type "QObject" | page.c.moveSuggestion(-1)
+WeatherSettings.qml: missing-property: Member "moveSuggestion" not found on type "QObject" | page.c.moveSuggestion(1)
+WeatherSettings.qml: missing-property: Member "pickSuggestion" not found on type "QObject" | onClicked: page.c.pickSuggestion(modelData)
+WeatherSettings.qml: missing-property: Member "resolvingLocation" not found on type "QObject" | text: page.c.resolvingLocation ? FoamyI18n.t("Finding location…") : page.c.dynamicLocationErrorText
+WeatherSettings.qml: missing-property: Member "resolvingLocation" not found on type "QObject" | visible: page.c.automaticLocation && (page.c.resolvingLocation || page.c.dynamicLocationErrorText !== "")
+WeatherSettings.qml: missing-property: Member "retrySave" not found on type "QObject" | onRetry: c.retrySave()
+WeatherSettings.qml: missing-property: Member "saveError" not found on type "QObject" | error: c.settingsError ? FoamyI18n.t(c.settingsError) : c.saveError ? FoamyI18n.t(c.saveError) : ""
+WeatherSettings.qml: missing-property: Member "saveError" not found on type "QObject" | error: c.settingsError ? FoamyI18n.t(c.settingsError) : c.saveError ? FoamyI18n.t(c.saveError) : ""
+WeatherSettings.qml: missing-property: Member "savePreference" not found on type "QObject" | onClicked: page.c.savePreference("animations", !page.c.animations)
+WeatherSettings.qml: missing-property: Member "savePreference" not found on type "QObject" | onClicked: page.c.savePreference("automaticLocation", !page.c.automaticLocation)
+WeatherSettings.qml: missing-property: Member "savePreference" not found on type "QObject" | page.c.savePreference("units", value)
+WeatherSettings.qml: missing-property: Member "saving" not found on type "QObject" | enabled: !page.c.saving
+WeatherSettings.qml: missing-property: Member "saving" not found on type "QObject" | enabled: !page.c.saving
+WeatherSettings.qml: missing-property: Member "saving" not found on type "QObject" | enabled: !page.c.saving && !page.c.savingLocation
+WeatherSettings.qml: missing-property: Member "saving" not found on type "QObject" | saving: c.saving || c.savingLocation
+WeatherSettings.qml: missing-property: Member "savingLocation" not found on type "QObject" | enabled: !page.c.saving && !page.c.savingLocation
+WeatherSettings.qml: missing-property: Member "savingLocation" not found on type "QObject" | enabled: !page.c.savingLocation
+WeatherSettings.qml: missing-property: Member "savingLocation" not found on type "QObject" | saving: c.saving || c.savingLocation
+WeatherSettings.qml: missing-property: Member "searchCompleted" not found on type "QObject" | visible: !page.c.automaticLocation && (page.c.searching || page.c.searchCompleted && !page.c.locationSuggestions.length)
+WeatherSettings.qml: missing-property: Member "searchEdited" not found on type "QObject" | onTextEdited: page.c.searchEdited(text)
+WeatherSettings.qml: missing-property: Member "searching" not found on type "QObject" | text: page.c.searching ? FoamyI18n.t("Searching…") : FoamyI18n.t("No locations found")
+WeatherSettings.qml: missing-property: Member "searching" not found on type "QObject" | visible: !page.c.automaticLocation && (page.c.searching || page.c.searchCompleted && !page.c.locationSuggestions.length)
+WeatherSettings.qml: missing-property: Member "settingsError" not found on type "QObject" | error: c.settingsError ? FoamyI18n.t(c.settingsError) : c.saveError ? FoamyI18n.t(c.saveError) : ""
+WeatherSettings.qml: missing-property: Member "settingsError" not found on type "QObject" | error: c.settingsError ? FoamyI18n.t(c.settingsError) : c.saveError ? FoamyI18n.t(c.saveError) : ""
+WeatherSettings.qml: missing-property: Member "settingsError" not found on type WeatherSettings::c with type QObject | page.c.settingsError = pasteError
+WeatherSettings.qml: missing-property: Member "suggestionIndex" not found on type "QObject" | hasCursor: index === page.c.suggestionIndex
+WeatherSettings.qml: missing-property: Member "suggestionIndex" not found on type WeatherSettings::c with type QObject | onHovered: page.c.suggestionIndex = index
+WeatherSettings.qml: missing-property: Member "units" not found on type "QObject" | value: page.c.units
+WeatherView.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < displayHours.length; i++) {
+WeatherView.qml: confusing-expression-statement: Expression statement has no obvious effect. | font
+WeatherView.qml: confusing-expression-statement: Expression statement has no obvious effect. | font
+WeatherView.qml: missing-property: Member "animations" not found on type "QObject" | readonly property bool skyAvailable: c.animations && GraphicsInfo.api !== GraphicsInfo.Software && GraphicsInfo.api !== GraphicsInfo.Unknown && skyConditions.av
+WeatherView.qml: missing-property: Member "automaticLabel" not found on type "QObject" | source: view.c.automaticLabel ? FoamyI18n.t("MET Norway · OpenStreetMap") : FoamyI18n.t("MET Norway")
+WeatherView.qml: missing-property: Member "background" not found on type "QObject" | color: Qt.alpha(Commons.Color.popups.background, !view.skyShown ? 0.35 : (view.lightTheme ? 0.70 : 0.58) + 0.2 * view.skyGlare)
+WeatherView.qml: missing-property: Member "background" not found on type "QObject" | surfaceColor: Commons.Color.popups.background
+WeatherView.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
+WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
+WeatherView.qml: missing-property: Member "close" not found on type "QObject" | onCloseRequested: c.close()
+WeatherView.qml: missing-property: Member "configuredLocationState" not found on type "QObject" | location: view.c.configuredLocationState
+WeatherView.qml: missing-property: Member "configuredLocationState" not found on type "QObject" | readonly property var skyConditions: Scene.conditions(current, c.now, c.configuredLocationState)
+WeatherView.qml: missing-property: Member "contentActive" not found on type "QObject" | readonly property var forecastDays: c.contentActive && !c.editingLocation ? Model.forecastDays(c.report, c.now) : []
+WeatherView.qml: missing-property: Member "current" not found on type "QObject" | readonly property var current: c.current
+WeatherView.qml: missing-property: Member "currentDescription" not found on type "QObject" | text: view.c.currentDescription
+WeatherView.qml: missing-property: Member "display" not found on type "QObject" | font.pixelSize: FoamyStyle.font.display
+WeatherView.qml: missing-property: Member "display" not found on type "QObject" | font.pixelSize: FoamyStyle.font.display
+WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | Component.onCompleted: if (view.c.editingLocation)
+WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | blocked: c.editingLocation
+WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | if (!c.editingLocation && c.selectedDayIndex >= forecastDays.length)
+WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | if (view.c.editingLocation)
+WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | if (view.c.editingLocation)
+WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | implicitHeight: c.editingLocation ? settingsLoader.implicitHeight : weatherColumn.implicitHeight
+WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | readonly property var forecastDays: c.contentActive && !c.editingLocation ? Model.forecastDays(c.report, c.now) : []
+WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | shown: view.c.opened && !view.c.editingLocation && band.y + band.height > weatherScroll.contentY
+WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | visible: !view.c.editingLocation
+WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | visible: view.c.editingLocation
+WeatherView.qml: missing-property: Member "errorIsStale" not found on type "QObject" | readonly property bool info: view.c.statusText !== "" || view.c.errorIsStale
+WeatherView.qml: missing-property: Member "errorText" not found on type "QObject" | readonly property string message: view.c.statusText || view.c.errorText
+WeatherView.qml: missing-property: Member "errorText" not found on type "QObject" | visible: view.c.statusText !== "" || view.c.errorText !== ""
+WeatherView.qml: missing-property: Member "focusBack" not found on type "QObject" | settingsLoader.item.focusBack()
+WeatherView.qml: missing-property: Member "hairline" not found on type "QObject" | border.width: Style.spacing.hairline
+WeatherView.qml: missing-property: Member "hairline" not found on type "QObject" | border.width: selected ? Style.spacing.hairline : 0
+WeatherView.qml: missing-property: Member "hairline" not found on type "QObject" | width: Style.spacing.hairline
+WeatherView.qml: missing-property: Member "heading" not found on type "QObject" | font.pixelSize: FoamyStyle.font.heading
+WeatherView.qml: missing-property: Member "iconLarge" not found on type "QObject" | font.pixelSize: FoamyStyle.font.iconLarge
+WeatherView.qml: missing-property: Member "loading" not found on type "QObject" | if (!c.loading && c.networkReady)
+WeatherView.qml: missing-property: Member "loading" not found on type "QObject" | readonly property string footerStatus: c.loading ? FoamyI18n.t("Refreshing…") : !c.networkReady ? FoamyI18n.t("Waiting for network…") : updatedText ? FoamyI18n.
+WeatherView.qml: missing-property: Member "loading" not found on type "QObject" | readonly property string headerMeta: !current ? (c.loading ? FoamyI18n.t("Loading weather…") : FoamyI18n.t("Waiting for weather")) : forecastDays.length ? Foamy
+WeatherView.qml: missing-property: Member "loading" not found on type "QObject" | refreshTooltip: view.c.loading ? FoamyI18n.t("Refreshing…") : (!view.c.networkReady ? FoamyI18n.t("Waiting for network…") : FoamyI18n.t("Refresh"))
+WeatherView.qml: missing-property: Member "loading" not found on type "QObject" | refreshing: view.c.opened && view.c.loading
+WeatherView.qml: missing-property: Member "networkReady" not found on type "QObject" | if (!c.loading && c.networkReady)
+WeatherView.qml: missing-property: Member "networkReady" not found on type "QObject" | readonly property string footerStatus: c.loading ? FoamyI18n.t("Refreshing…") : !c.networkReady ? FoamyI18n.t("Waiting for network…") : updatedText ? FoamyI18n.
+WeatherView.qml: missing-property: Member "networkReady" not found on type "QObject" | refreshEnabled: view.c.networkReady
+WeatherView.qml: missing-property: Member "networkReady" not found on type "QObject" | refreshTooltip: view.c.loading ? FoamyI18n.t("Refreshing…") : (!view.c.networkReady ? FoamyI18n.t("Waiting for network…") : FoamyI18n.t("Refresh"))
+WeatherView.qml: missing-property: Member "now" not found on type "QObject" | now: view.c.now
+WeatherView.qml: missing-property: Member "now" not found on type "QObject" | readonly property string updatedText: c.report && c.report.fetchedAt ? Preferences.age(c.report.fetchedAt, c.now, FoamyI18n.t, FoamyI18n.tn) : ""
+WeatherView.qml: missing-property: Member "now" not found on type "QObject" | readonly property var forecastDays: c.contentActive && !c.editingLocation ? Model.forecastDays(c.report, c.now) : []
+WeatherView.qml: missing-property: Member "now" not found on type "QObject" | readonly property var skyConditions: Scene.conditions(current, c.now, c.configuredLocationState)
+WeatherView.qml: missing-property: Member "numeral" not found on type "QObject" | font.pixelSize: FoamyStyle.font.numeral
+WeatherView.qml: missing-property: Member "opened" not found on type "QObject" | if (!view.c.opened)
+WeatherView.qml: missing-property: Member "opened" not found on type "QObject" | refreshing: view.c.opened && view.c.loading
+WeatherView.qml: missing-property: Member "opened" not found on type "QObject" | shown: view.c.opened && !view.c.editingLocation && band.y + band.height > weatherScroll.contentY
+WeatherView.qml: missing-property: Member "refresh" not found on type "QObject" | c.refresh(true)
+WeatherView.qml: missing-property: Member "report" not found on type "QObject" | readonly property string updatedText: c.report && c.report.fetchedAt ? Preferences.age(c.report.fetchedAt, c.now, FoamyI18n.t, FoamyI18n.tn) : ""
+WeatherView.qml: missing-property: Member "report" not found on type "QObject" | readonly property string updatedText: c.report && c.report.fetchedAt ? Preferences.age(c.report.fetchedAt, c.now, FoamyI18n.t, FoamyI18n.tn) : ""
+WeatherView.qml: missing-property: Member "report" not found on type "QObject" | readonly property string updatedText: c.report && c.report.fetchedAt ? Preferences.age(c.report.fetchedAt, c.now, FoamyI18n.t, FoamyI18n.tn) : ""
+WeatherView.qml: missing-property: Member "report" not found on type "QObject" | readonly property var forecastDays: c.contentActive && !c.editingLocation ? Model.forecastDays(c.report, c.now) : []
+WeatherView.qml: missing-property: Member "reportLocation" not found on type "QObject" | text: view.c.reportLocation || FoamyI18n.t("Choose location")
+WeatherView.qml: missing-property: Member "selectedDayIndex" not found on type "QObject" | if (!c.editingLocation && c.selectedDayIndex >= forecastDays.length)
+WeatherView.qml: missing-property: Member "selectedDayIndex" not found on type "QObject" | readonly property bool selected: index === view.c.selectedDayIndex
+WeatherView.qml: missing-property: Member "selectedDayIndex" not found on type "QObject" | readonly property var selectedDay: forecastDays.length ? forecastDays[Math.max(0, Math.min(c.selectedDayIndex, forecastDays.length - 1))] : null
+WeatherView.qml: missing-property: Member "selectedDayIndex" not found on type "QObject" | text: view.selectedDay ? view.dayLabel(view.selectedDay, view.c.selectedDayIndex) + " · " + view.hourSummary : ""
+WeatherView.qml: missing-property: Member "selectedDayIndex" not found on type WeatherView::c with type QObject | c.selectedDayIndex = Math.max(0, forecastDays.length - 1)
+WeatherView.qml: missing-property: Member "selectedDayIndex" not found on type WeatherView::c with type QObject | c.selectedDayIndex = cursor.index
+WeatherView.qml: missing-property: Member "selectedDayIndex" not found on type WeatherView::c with type QObject | c.selectedDayIndex = index
+WeatherView.qml: missing-property: Member "startEditingLocation" not found on type "QObject" | c.startEditingLocation()
+WeatherView.qml: missing-property: Member "startEditingLocation" not found on type "QObject" | c.startEditingLocation()
+WeatherView.qml: missing-property: Member "startEditingLocation" not found on type "QObject" | onSettingsClicked: view.c.startEditingLocation()
+WeatherView.qml: missing-property: Member "statusText" not found on type "QObject" | readonly property bool info: view.c.statusText !== "" || view.c.errorIsStale
+WeatherView.qml: missing-property: Member "statusText" not found on type "QObject" | readonly property string message: view.c.statusText || view.c.errorText
+WeatherView.qml: missing-property: Member "statusText" not found on type "QObject" | visible: view.c.statusText !== "" || view.c.errorText !== ""
+WeatherView.qml: missing-property: Member "subtitle" not found on type "QObject" | font.pixelSize: FoamyStyle.font.subtitle
+WeatherView.qml: missing-property: Member "switchPanel" not found on type "QObject" | c.switchPanel(direction)
+WeatherView.qml: missing-property: Member "text" not found on type "QObject" | border.color: Qt.alpha(Commons.Color.popups.text, 0.08)
+WeatherView.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
+WeatherView.qml: missing-property: Member "units" not found on type "QObject" | return Preferences.precipitation(value, c.units, FoamyI18n.number)
+WeatherView.qml: missing-property: Member "units" not found on type "QObject" | return Preferences.temperature(value, c.units, FoamyI18n.number)
+WeatherView.qml: missing-property: Member "units" not found on type "QObject" | return Preferences.wind(value, c.units, FoamyI18n.t, FoamyI18n.number)
+WeatherView.qml: missing-property: Member "units" not found on type "QObject" | text: view.c.units === "imperial" ? "°F" : "°C"
+WeatherView.qml: missing-property: Member "units" not found on type "QObject" | text: view.current ? Preferences.temperatureValue(view.current.temperature, view.c.units, FoamyI18n.number) : "--"
+WeatherView.qml: missing-property: Member "windLabel" not found on type "QObject" | detail: view.current ? view.c.windLabel(view.current.windDirection) : ""
+WeatherView.qml: unqualified: Unqualified access | name: modelData.icon
+WeatherView.qml: unqualified: Unqualified access | symbol: modelData.symbol
+WeatherView.qml: unqualified: Unqualified access | text: modelData.detail
+WeatherView.qml: unqualified: Unqualified access | text: modelData.label
+WeatherView.qml: unqualified: Unqualified access | text: modelData.time
+WeatherView.qml: unqualified: Unqualified access | text: modelData.value
+WeatherView.qml: unqualified: Unqualified access | text: view.precipitation(modelData.precipitation)
+WeatherView.qml: unqualified: Unqualified access | text: view.temperature(modelData.temperature)
+preview/Preview.qml: unqualified: Unqualified access | controller: mock

@@ -262,6 +262,11 @@ fn run(args: &[OsString]) -> String {
         return util::error_json(keys::UNAVAILABLE, &[]);
     };
 
+    // Sunrise times are extras and each request may take SUN_TIMEOUT. A
+    // forecast refresh that just failed means MET or the network is down, and
+    // after one failed sunrise request the next days' would fail the same
+    // way; read the caches then, but send nothing more.
+    let mut sun_requests = !stale;
     let mut sun = Vec::new();
     for offset in 0..3 {
         let date = util::local_date_after(offset, now);
@@ -277,7 +282,7 @@ fn run(args: &[OsString]) -> String {
         );
         let mut times =
             util::read_regular(&sun_cache, SUN_MAX_BYTES as u64).and_then(|c| sun_times(&c.data));
-        if times.is_none() {
+        if times.is_none() && sun_requests {
             let target = format!("/weatherapi/sunrise/3.0/sun?lat={lat3}&lon={lon3}&date={date}");
             let request = Request {
                 host: HOST,
@@ -293,6 +298,8 @@ fn run(args: &[OsString]) -> String {
             {
                 let _ = util::write_private(&sun_cache, &response.body);
                 times = Some(valid);
+            } else {
+                sun_requests = false;
             }
         }
         let (sunrise, sunset) = times.unwrap_or_default();

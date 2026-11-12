@@ -62,29 +62,37 @@ QtObject {
   property bool weatherRestart: false
 
   // --- location ------------------------------------------------------------------
-  property var storedLocationState: ({ name: "", latitude: null, longitude: null })
-  property var localLocationState: ({ name: "", latitude: null, longitude: null })
-  property var dynamicLocationState: ({ name: "", latitude: null, longitude: null, source: "" })
+  property var storedLocationState: ({
+      name: "",
+      latitude: null,
+      longitude: null
+    })
+  property var localLocationState: ({
+      name: "",
+      latitude: null,
+      longitude: null
+    })
+  property var dynamicLocationState: ({
+      name: "",
+      latitude: null,
+      longitude: null,
+      source: ""
+    })
   property string dynamicLocationError: ""
   property var dynamicLocationErrorValues: []
   property int locationRetries: 0
   property int locationGeneration: 0
   readonly property bool resolvingLocation: locationProc.running
-  readonly property bool manualLocationEnabled: localLocationState.latitude !== null
-    && localLocationState.longitude !== null
-  readonly property var configuredLocationState: automaticLocation ? dynamicLocationState
-    : (manualLocationEnabled ? localLocationState : storedLocationState)
+  readonly property bool manualLocationEnabled: localLocationState.latitude !== null && localLocationState.longitude !== null
+  readonly property var configuredLocationState: automaticLocation ? dynamicLocationState : (manualLocationEnabled ? localLocationState : storedLocationState)
   readonly property string configuredLocation: configuredLocationState.name
-  readonly property bool hasCoordinates: !isNaN(parseFloat(String(configuredLocationState.latitude)))
-    && !isNaN(parseFloat(String(configuredLocationState.longitude)))
-  readonly property string coordinateQuery: hasCoordinates
-    ? String(configuredLocationState.latitude) + "," + String(configuredLocationState.longitude) : ""
+  readonly property bool hasCoordinates: !isNaN(parseFloat(String(configuredLocationState.latitude))) && !isNaN(parseFloat(String(configuredLocationState.longitude)))
+  readonly property string coordinateQuery: hasCoordinates ? String(configuredLocationState.latitude) + "," + String(configuredLocationState.longitude) : ""
 
   // --- network -------------------------------------------------------------------
   // WARP can leave NetworkManager's external probe at Limited while routed
   // internet access is working, so only block truly offline/portal states.
-  readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full
-    || Networking.connectivity === NetworkConnectivity.Limited
+  readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full || Networking.connectivity === NetworkConnectivity.Limited
   property bool networkSettled: false
   readonly property bool networkReady: active && networkConnected && networkSettled
   onNetworkConnectedChanged: networkSettled = false
@@ -107,7 +115,9 @@ QtObject {
       weatherRestart = true
       weatherProc.running = false
     } else {
-      Qt.callLater(function() { root.refresh(false) })
+      Qt.callLater(function () {
+        root.refresh(false)
+      })
     }
   }
 
@@ -118,17 +128,23 @@ QtObject {
     locationProc.running = false
     dynamicLocationError = ""
     dynamicLocationErrorValues = []
-    if (automaticLocation) Qt.callLater(function() { root.resolveLocation(false) })
+    if (automaticLocation)
+      Qt.callLater(function () {
+        root.resolveLocation(false)
+      })
   }
 
-  onActiveChanged: if (active) loadLocations()
-  Component.onCompleted: if (active) loadLocations()
+  onActiveChanged: if (active)
+    loadLocations()
+  Component.onCompleted: if (active)
+    loadLocations()
 
   // The helper (the only writer) first moves a searched place older versions
   // kept in config; the files are read again once it has.
   function loadLocations() {
     reloadLocations()
-    if (!locationMigrateProc.running) locationMigrateProc.running = true
+    if (!locationMigrateProc.running)
+      locationMigrateProc.running = true
   }
 
   function reloadLocations() {
@@ -144,9 +160,7 @@ QtObject {
 
   // Starting, loading, retrying, resolving the automatic location, or
   // waiting for the network to settle: an answer is on its way.
-  readonly property bool pending: active && (loading || retryTimer.running
-    || locationMigrateProc.running || resolvingLocation || locationRetryTimer.running
-    || (networkConnected && !networkSettled))
+  readonly property bool pending: active && (loading || retryTimer.running || locationMigrateProc.running || resolvingLocation || locationRetryTimer.running || (networkConnected && !networkSettled))
 
   // The `current()` IPC reply (compact JSON; Model.currentReply). Never
   // waits: an idle service starts and answers "pending" until it has data.
@@ -158,7 +172,9 @@ QtObject {
       reportCurrent: reportCurrent,
       units: preferences.units,
       convert: Preferences.converted,
-      translate: function(key) { return FoamyI18n.t(key) },
+      translate: function (key) {
+        return FoamyI18n.t(key)
+      },
       now: new Date(),
       // Just started: the bindings above haven't seen the network yet.
       pending: starting || pending,
@@ -176,7 +192,8 @@ QtObject {
   // A helper exit of 126/127: no binary for this CPU. Report it and stop
   // the retries; nothing starts the helper again.
   function helperExited(exitCode) {
-    if (!FoamyNative.unavailable(exitCode)) return false
+    if (!FoamyNative.unavailable(exitCode))
+      return false
     helperUnavailable = true
     retryTimer.stop()
     locationRetryTimer.stop()
@@ -197,8 +214,8 @@ QtObject {
       setError("Choose a location to load weather")
       return
     }
-    if (weatherProc.running) return
-
+    if (weatherProc.running)
+      return
     loading = true
     setError("")
     weatherRestart = false
@@ -207,8 +224,7 @@ QtObject {
     weatherProc.locationName = configuredLocation
     weatherProc.command = FoamyNative.command(pluginDir, Model.HELPER, force ? ["fetch", "--force"] : ["fetch"])
     // Process arguments are visible to other users through procfs; use the private pipe.
-    weatherProc.requestInput = String(configuredLocationState.latitude) + "\n"
-      + String(configuredLocationState.longitude) + "\n"
+    weatherProc.requestInput = String(configuredLocationState.latitude) + "\n" + String(configuredLocationState.longitude) + "\n"
     if (requestUserAgent)
       weatherProc.command = ["env", "MET_WEATHER_USER_AGENT=" + requestUserAgent].concat(weatherProc.command)
     weatherProc.stdinEnabled = true
@@ -216,10 +232,10 @@ QtObject {
   }
 
   function resolveLocation(force) {
-    if (!networkReady || !automaticLocation || locationProc.running || helperUnavailable) return
+    if (!networkReady || !automaticLocation || locationProc.running || helperUnavailable)
+      return
     locationProc.generation = locationGeneration
-    locationProc.command = FoamyNative.command(pluginDir, Model.HELPER,
-      force ? ["resolve-location", "--force"] : ["resolve-location"])
+    locationProc.command = FoamyNative.command(pluginDir, Model.HELPER, force ? ["resolve-location", "--force"] : ["resolve-location"])
     if (requestUserAgent)
       locationProc.command = ["env", "WEATHER_LOCATION_USER_AGENT=" + requestUserAgent].concat(locationProc.command)
     locationProc.running = true
@@ -227,7 +243,8 @@ QtObject {
 
   function scheduleRetry() {
     loading = false
-    if (!networkReady || retries >= 3) return
+    if (!networkReady || retries >= 3)
+      return
     retryTimer.interval = 2500 * Math.pow(2, retries)
     retries++
     retryTimer.restart()
@@ -264,17 +281,21 @@ QtObject {
     report = parsed
     loading = false
     setError(parsed.stale ? "Showing last known weather" : "")
-    if (parsed.stale) scheduleRetry()
-    else retries = 0
+    if (parsed.stale)
+      scheduleRetry()
+    else
+      retries = 0
   }
 
   function finishLocation(raw, generation) {
-    if (generation !== locationGeneration || helperUnavailable) return
+    if (generation !== locationGeneration || helperUnavailable)
+      return
     var resolved = Model.parseResolvedLocation(raw)
     if (resolved.latitude === null || resolved.longitude === null) {
       dynamicLocationError = resolved.error || "Could not read automatic location"
       dynamicLocationErrorValues = resolved.errorValues
-      if (!hasCoordinates) setError(dynamicLocationError, dynamicLocationErrorValues)
+      if (!hasCoordinates)
+        setError(dynamicLocationError, dynamicLocationErrorValues)
       // Automatic location needs its own recovery; weather cannot load without it.
       if (networkReady && automaticLocation && locationRetries < 3) {
         locationRetryTimer.interval = 2500 * Math.pow(2, locationRetries++)
@@ -288,7 +309,8 @@ QtObject {
     locationRetryTimer.stop()
     dynamicLocationError = ""
     dynamicLocationErrorValues = []
-    if (automaticLocation && !loading && errorMessage !== "Showing last known weather") setError("")
+    if (automaticLocation && !loading && errorMessage !== "Showing last known weather")
+      setError("")
   }
 
   // The searched place (localLocationFile) first, then Omarchy's own weather
@@ -349,6 +371,10 @@ QtObject {
     onTriggered: root.resolveLocation(true)
   }
 
+  // No outer timeout: the helper bounds each request itself (3 s to connect,
+  // 10 s for the forecast, 8 s for each of up to three sunrise requests, which
+  // stop at the first failure), so a fetch ends within about 35 s and
+  // `loading` always settles in finishWeather.
   property Process weatherProc: Process {
     property string requestInput: ""
     property int generation: 0
@@ -358,11 +384,14 @@ QtObject {
       write(requestInput)
       stdinEnabled = false
     }
-    onExited: function(exitCode) {
-      if (root.helperExited(exitCode)) return
+    onExited: function (exitCode) {
+      if (root.helperExited(exitCode))
+        return
       if (root.weatherRestart) {
         root.weatherRestart = false
-        Qt.callLater(function() { root.refresh(false) })
+        Qt.callLater(function () {
+          root.refresh(false)
+        })
       }
     }
     stdout: StdioCollector {
@@ -373,7 +402,7 @@ QtObject {
 
   property Process locationMigrateProc: Process {
     command: FoamyNative.command(root.pluginDir, Model.HELPER, ["location", "--migrate"])
-    onExited: function(exitCode) {
+    onExited: function (exitCode) {
       root.helperExited(exitCode)
       root.reloadLocations()
     }
@@ -381,7 +410,9 @@ QtObject {
 
   property Process locationProc: Process {
     property int generation: 0
-    onExited: function(exitCode) { root.helperExited(exitCode) }
+    onExited: function (exitCode) {
+      root.helperExited(exitCode)
+    }
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: root.finishLocation(text, root.locationProc.generation)

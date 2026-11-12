@@ -1,5 +1,4 @@
 import QtQuick
-import qs.Commons
 import qs.Ui
 
 BarWidget {
@@ -8,23 +7,31 @@ BarWidget {
 
   function injectPanel() {
     var target = panelLoader.item
-    if (!target) return
-    if ("bar" in target) target.bar = root.bar
-    if ("settings" in target) target.settings = root.settings
-    if ("anchorItem" in target) target.anchorItem = button
-    if ("hostWidget" in target) target.hostWidget = root
+    if (!target)
+      return
+    if ("bar" in target)
+      target.bar = root.bar
+    if ("settings" in target)
+      target.settings = root.settings
+    if ("anchorItem" in target)
+      target.anchorItem = button
+    if ("hostWidget" in target)
+      target.hostWidget = root
   }
 
   function refresh(force) {
-    if (panelLoader.item && panelLoader.item.refresh) panelLoader.item.refresh(force === true)
+    if (panelLoader.item && panelLoader.item.refresh)
+      panelLoader.item.refresh(force === true)
   }
 
   function togglePanel() {
-    if (panelLoader.item && panelLoader.item.toggle) panelLoader.item.toggle()
+    if (panelLoader.item && panelLoader.item.toggle)
+      panelLoader.item.toggle()
   }
 
   function notifySummary() {
-    if (panelLoader.item && panelLoader.item.notifySummary) panelLoader.item.notifySummary()
+    if (panelLoader.item && panelLoader.item.notifySummary)
+      panelLoader.item.notifySummary()
   }
 
   // The per-bar Panel (popup, settings); the weather data lives in WeatherService.
@@ -32,18 +39,20 @@ BarWidget {
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
   function open() {
-    if (panelLoader.item && panelLoader.item.openFromHotkey) panelLoader.item.openFromHotkey()
+    if (panelLoader.item && panelLoader.item.openFromHotkey)
+      panelLoader.item.openFromHotkey()
   }
 
   function close() {
-    if (panelLoader.item && panelLoader.item.close) panelLoader.item.close()
+    if (panelLoader.item && panelLoader.item.close)
+      panelLoader.item.close()
   }
 
-  readonly property bool popoutSwitchClosing: panelLoader.item
-    ? panelLoader.item.popoutSwitchClosing === true : false
+  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
 
   function closeForPopoutSwitch() {
-    if (panelLoader.item) panelLoader.item.closeForPopoutSwitch()
+    if (panelLoader.item)
+      panelLoader.item.closeForPopoutSwitch()
   }
 
   readonly property real openPanelIndicatorWidth: button.labelWidth
@@ -75,10 +84,13 @@ BarWidget {
     horizontalMargin: 8.75
     verticalPadding: 8.75
 
-    onPressed: function(b) {
-      if (b === Qt.RightButton) root.notifySummary()
-      else if (b === Qt.MiddleButton) root.refresh(true)
-      else root.togglePanel()
+    onPressed: function (b) {
+      if (b === Qt.RightButton)
+        root.notifySummary()
+      else if (b === Qt.MiddleButton)
+        root.refresh(true)
+      else
+        root.togglePanel()
     }
 
     OpticalGlyph {

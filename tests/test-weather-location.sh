@@ -10,6 +10,8 @@ server_pid=""
 trap '[[ -z $server_pid ]] || kill "$server_pid" 2>/dev/null; rm -rf "$test_root"' EXIT
 
 plugin_root=$(cd -- "$(dirname "$0")/.." && pwd)
+# helper_argv fills these through mapfile's name reference.
+resolver=() location_writer=()
 helper_argv() {
   mapfile -d '' -t "$1" < <(python3 "$plugin_root/tests/fakenet.py" argv "$2" </dev/null)
 }
@@ -26,12 +28,16 @@ fail() {
 printf '%s\n' '{"address":{"town":"Example Town"}}' >"$test_root/net/reverse.json"
 python3 "$plugin_root/tests/fakenet.py" serve "$test_root/net" &
 server_pid=$!
-for _ in $(seq 100); do [[ -e $test_root/net/port ]] && break; sleep 0.1; done
+for _ in $(seq 100); do
+  [[ -e $test_root/net/port ]] && break
+  sleep 0.1
+done
 [[ -e $test_root/net/port ]] || fail "the loopback server did not start"
 for variable in http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY SSL_CERT_DIR; do
   unset "$variable"
 done
-export FOAMY_WEATHER_TEST_CONNECT="127.0.0.1:$(cat "$test_root/net/port")"
+FOAMY_WEATHER_TEST_CONNECT="127.0.0.1:$(cat "$test_root/net/port")"
+export FOAMY_WEATHER_TEST_CONNECT
 export SSL_CERT_FILE="$test_root/net/ca.pem"
 
 cat >"$mock_bin/where-am-i" <<'EOF'
@@ -60,10 +66,7 @@ jq -e '
 [[ $(stat -c %a "$location_file") == 600 ]] || fail "manual location must be owner-only"
 [[ ! -e $legacy_file ]] || fail "manual location must not be written to config"
 
-printf '%s\n' '{"name":"Old","latitude":1,"longitude":2}' >"$legacy_file"
-"${location_writer[@]}" --clear
-[[ ! -e $location_file ]] || fail "manual location was not cleared"
-[[ ! -e $legacy_file ]] || fail "legacy location was not cleared"
+rm -f "$location_file"
 
 # Migration: a valid legacy file moves to state once, owner-only.
 "${location_writer[@]}" --migrate || fail "migrate without any file must succeed"
@@ -77,14 +80,18 @@ jq -e '. == {name: "Old Town", latitude: 59.91, longitude: 10.75}' "$location_fi
 [[ ! -e $legacy_file ]] || fail "legacy location was not removed after migrating"
 [[ -z $(find "$XDG_STATE_HOME/omarchy/settings" -name '.*') ]] || fail "migrate left a temp file"
 
-# Both present: the state file wins and the legacy file goes.
-printf '%s\n' '{"name":"Stale","latitude":1,"longitude":2}' >"$legacy_file"
+# Both present: the state file wins. A legacy file that holds another place
+# (rewritten after a downgrade, say) is kept; one with the same place goes.
+printf '%s\n' '{"name":"Newer","latitude":1,"longitude":2}' >"$legacy_file"
 "${location_writer[@]}" --migrate || fail "migrate with both files failed"
 jq -e '.name == "Old Town"' "$location_file" >/dev/null || fail "legacy location replaced the state location"
-[[ ! -e $legacy_file ]] || fail "superseded legacy location was not removed"
+jq -e '.name == "Newer"' "$legacy_file" >/dev/null || fail "a different legacy location was removed"
+printf '%s\n' '{"longitude":10.75,"name":"Old Town","latitude":59.91,"extra":1}' >"$legacy_file"
+"${location_writer[@]}" --migrate || fail "migrate with the same location failed"
+[[ ! -e $legacy_file ]] || fail "an already migrated legacy location was not removed"
 
 # An invalid legacy file is left alone, and so is an unreadable state file.
-"${location_writer[@]}" --clear
+rm -f "$location_file" "$legacy_file"
 printf '%s\n' '{"name":"Broken","latitude":91,"longitude":2}' >"$legacy_file"
 "${location_writer[@]}" --migrate || fail "migrate with an invalid legacy file must succeed"
 [[ ! -e $location_file ]] || fail "invalid legacy location was migrated"
@@ -94,10 +101,12 @@ printf '%s\n' '{broken' >"$location_file"
 "${location_writer[@]}" --migrate || fail "migrate with an invalid state file must succeed"
 [[ $(cat "$location_file") == '{broken' ]] || fail "invalid state location was overwritten"
 jq -e '.name == "Old"' "$legacy_file" >/dev/null || fail "legacy location removed without a valid state location"
-"${location_writer[@]}" --clear
+rm -f "$location_file" "$legacy_file"
 
-# Usage errors: exit 2, nothing written.
-for usage in "--bogus" "--set extra"; do
+# Usage errors: exit 2, nothing written or removed. `--clear` had no caller
+# and was removed; it must not delete the files any more.
+printf '%s\n' '{"name":"Old","latitude":1,"longitude":2}' >"$legacy_file"
+for usage in "--bogus" "--set extra" "--clear"; do
   set +e
   # shellcheck disable=SC2086
   "${location_writer[@]}" $usage </dev/null 2>/dev/null
@@ -106,6 +115,8 @@ for usage in "--bogus" "--set extra"; do
   [[ $status == 2 ]] || fail "usage error '$usage' must exit 2 (got $status)"
 done
 [[ ! -e $location_file ]] || fail "a usage error wrote a location"
+[[ -e $legacy_file ]] || fail "a usage error removed the legacy location"
+rm -f "$legacy_file"
 
 geoclue=$("${resolver[@]}" --force)
 jq -e '

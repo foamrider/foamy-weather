@@ -1,0 +1,6 @@
+do_GET  # tests/fakenet.py: BaseHTTPRequestHandler dispatches requests to do_<METHOD> by name
+log_message  # tests/fakenet.py: BaseHTTPRequestHandler hook, overridden to keep the test output quiet
+protocol_version  # tests/fakenet.py: read by BaseHTTPRequestHandler (HTTP/1.1)
+close_connection  # tests/fakenet.py, search-runtime.py, fetch-runtime.py: read by BaseHTTPRequestHandler after each request
+daemon_threads  # tests/fakenet.py: read by ThreadingMixIn
+PrivateLocation  # tests/test_location_privacy.py: a unittest.TestCase, found by `python3 -m unittest`

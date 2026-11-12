@@ -1,0 +1,1 @@
+preview/Before.qml  qmllint  # render.py --trio's Before scene: loaded only in a git-archive copy of the 1.1 dev tree, where `import ".." as Dev` is the old Panel (its errorMessage and report are writable there)

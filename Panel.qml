@@ -2,8 +2,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import qs.Commons
-import qs.Commons as Commons
 import qs.Ui
 import "kit"
 import "kit/FoamyNative.js" as FoamyNative
@@ -28,10 +26,14 @@ Panel {
   property bool openedFromHotkey: false
   readonly property var barIdentity: hostWidget || root
   readonly property string entryId: hostWidget && hostWidget.moduleName ? hostWidget.moduleName : root.moduleName
-  readonly property alias popup: popup
+  readonly property alias popup: weatherPopup
 
   // --- shared state ----------------------------------------------------------------
-  FoamyMember { id: member; scope: "weather"; demanding: root.opened }
+  FoamyMember {
+    id: member
+    scope: "weather"
+    demanding: root.opened
+  }
   // Every instance shows the same widget entry; the leader hands its settings
   // over, and itself, so the service entry's IPC can open its popup.
   Binding {
@@ -55,7 +57,11 @@ Panel {
     fields: Preferences.fields
     settings: root.settings
   }
-  FoamySettingsState { id: settingsState; panel: root; onHidden: root.clearSearch() }
+  FoamySettingsState {
+    id: settingsState
+    panel: root
+    onHidden: root.clearSearch()
+  }
 
   readonly property var preferences: Prefs.values(Preferences.fields, prefs.effectiveSettings)
   readonly property string units: preferences.units
@@ -74,15 +80,12 @@ Panel {
   readonly property string errorMessage: WeatherService.errorMessage
   readonly property string errorText: errorMessage ? FoamyI18n.t(errorMessage, WeatherService.errorValues) : ""
   readonly property bool errorIsStale: errorMessage === "Showing last known weather"
-  readonly property string statusText: report && !reportCurrent && loading
-    ? (configuredLocation ? FoamyI18n.t("Loading weather for %1…", [configuredLocation]) : FoamyI18n.t("Loading weather for the new location…"))
-    : ""
-  readonly property string dynamicLocationErrorText: WeatherService.dynamicLocationError
-    ? FoamyI18n.t(WeatherService.dynamicLocationError, WeatherService.dynamicLocationErrorValues) : ""
+  readonly property string statusText: report && !reportCurrent && loading ? (configuredLocation ? FoamyI18n.t("Loading weather for %1…", [configuredLocation]) : FoamyI18n.t("Loading weather for the new location…")) : ""
+  readonly property string dynamicLocationErrorText: WeatherService.dynamicLocationError ? FoamyI18n.t(WeatherService.dynamicLocationError, WeatherService.dynamicLocationErrorValues) : ""
   readonly property bool automaticLabel: automaticLocation && String(configuredLocationState.source || "").indexOf("geoclue") === 0
 
   // Forecast rows exist only while the popup is shown (or fading out).
-  readonly property bool contentActive: root.opened || popup.visible
+  readonly property bool contentActive: root.opened || weatherPopup.visible
   property date now: new Date()
   property int selectedDayIndex: 0
 
@@ -105,14 +108,27 @@ Panel {
   property bool searchCompleted: false
   property string geocodePendingQuery: ""
   property string geocodeActiveQuery: ""
+  // Bumped whenever the search text changes or is cleared. A search started
+  // under an older value was cancelled: its exit and output are dropped, even
+  // when the new text trims to the same query (a trailing space).
+  property int geocodeGeneration: 0
   readonly property bool searching: geocodeProc.running
   readonly property string pluginDir: WeatherService.pluginDir
 
-  signal searchCleared()
+  signal searchCleared
 
   function windLabel(degrees) {
     var direction = Model.windDirection(degrees)
-    var names = { N: "Northerly", NØ: "Northeasterly", Ø: "Easterly", SØ: "Southeasterly", S: "Southerly", SV: "Southwesterly", V: "Westerly", NV: "Northwesterly" }
+    var names = {
+      N: "Northerly",
+      NØ: "Northeasterly",
+      Ø: "Easterly",
+      SØ: "Southeasterly",
+      S: "Southerly",
+      SV: "Southwesterly",
+      V: "Westerly",
+      NV: "Northwesterly"
+    }
     return names[direction] ? FoamyI18n.t(names[direction]) : direction
   }
 
@@ -125,8 +141,9 @@ Panel {
   function openFromHotkey() {
     openedFromHotkey = true
     showPopup()
-    Qt.callLater(function() {
-      if (root.opened) setCenterHoverRevealSuppressed(true)
+    Qt.callLater(function () {
+      if (root.opened)
+        setCenterHoverRevealSuppressed(true)
     })
   }
 
@@ -139,13 +156,16 @@ Panel {
 
   function close() {
     setCenterHoverRevealSuppressed(false)
-    if (editingLocation) cancelEditingLocation()
+    if (editingLocation)
+      cancelEditingLocation()
     root.controller.hide()
   }
 
   function toggle() {
-    if (root.opened) root.close()
-    else root.openFromHotkey()
+    if (root.opened)
+      root.close()
+    else
+      root.openFromHotkey()
   }
 
   function refresh(force) {
@@ -173,27 +193,27 @@ Panel {
     }
     var wind = Preferences.wind(current.windSpeed, units, FoamyI18n.t, FoamyI18n.number)
     var windDirection = windLabel(current.windDirection)
-    var body = currentDescription + " · " + currentTemperature
-      + "\n" + FoamyI18n.t("Wind") + " " + wind + (windDirection ? " " + windDirection : "")
-      + " · " + FoamyI18n.t("Humidity") + " " + (current.humidity === null ? "—" : FoamyI18n.number(current.humidity) + "%")
+    var body = currentDescription + " · " + currentTemperature + "\n" + FoamyI18n.t("Wind") + " " + wind + (windDirection ? " " + windDirection : "") + " · " + FoamyI18n.t("Humidity") + " " + (current.humidity === null ? "—" : FoamyI18n.number(current.humidity) + "%")
     // A failed reverse lookup can leave a coordinate pair as the location label.
     var headlineLocation = reportLocation
-    if (!headlineLocation || /^-?[0-9.]+,\s*-?[0-9.]+$/.test(headlineLocation)) headlineLocation = FoamyI18n.t("selected location")
-    Quickshell.execDetached([
-      "omarchy-notification-send", "-g", conditionIcon,
-      FoamyI18n.t("Weather in %1", [headlineLocation]), body
-    ])
+    if (!headlineLocation || /^-?[0-9.]+,\s*-?[0-9.]+$/.test(headlineLocation))
+      headlineLocation = FoamyI18n.t("selected location")
+    Quickshell.execDetached(["omarchy-notification-send", "-g", conditionIcon, FoamyI18n.t("Weather in %1", [headlineLocation]), body])
   }
 
   function savePreference(key, value) {
     settingsError = ""
     prefs.save(key, value)
-    if (key === "automaticLocation" && value === true) clearSearch()
+    if (key === "automaticLocation" && value === true)
+      clearSearch()
   }
 
-  function retrySave() { prefs.retry() }
+  function retrySave() {
+    prefs.retry()
+  }
 
   function clearSearch() {
+    geocodeGeneration++
     geocodeDebounce.stop()
     geocodeProc.running = false
     geocodePendingQuery = ""
@@ -218,13 +238,15 @@ Panel {
 
   // The search field's text changed by typing or paste.
   function searchEdited(text) {
+    geocodeGeneration++
     geocodeDebounce.stop()
     geocodeProc.running = false
     locationSuggestions = []
     searchCompleted = false
     settingsError = ""
     searchText = String(text || "")
-    if (searchText.trim().length >= 2) geocodeDebounce.restart()
+    if (searchText.trim().length >= 2)
+      geocodeDebounce.restart()
   }
 
   function moveSuggestion(delta) {
@@ -241,37 +263,49 @@ Panel {
   }
 
   function pickSuggestion(suggestion) {
-    if (!suggestion || savingLocation || automaticLocation) return
+    if (!suggestion || savingLocation || automaticLocation)
+      return
     savingLocation = true
     locationSaveProc.command = FoamyNative.command(pluginDir, Model.HELPER, ["location", "--set"])
-    locationSaveProc.requestInput = JSON.stringify({ name: suggestion.name,
-      latitude: suggestion.latitude, longitude: suggestion.longitude }) + "\n"
+    locationSaveProc.requestInput = JSON.stringify({
+      name: suggestion.name,
+      latitude: suggestion.latitude,
+      longitude: suggestion.longitude
+    }) + "\n"
     locationSaveProc.stdinEnabled = true
     locationSaveProc.running = true
   }
 
   function requestGeocode() {
-    if (!editingLocation || automaticLocation) return
+    if (!editingLocation || automaticLocation)
+      return
     var query = searchText.trim()
     if (query.length < 2) {
       locationSuggestions = []
       return
     }
     geocodePendingQuery = query
-    if (!geocodeProc.running) startGeocode()
+    if (!geocodeProc.running)
+      startGeocode()
   }
 
   function geocodeLanguage() {
     var language = String(FoamyI18n.language || "en").toLowerCase()
-    if (language === "nb" || language === "nn") return "no"
+    if (language === "nb" || language === "nn")
+      return "no"
     return /^[a-z]{2}$/.test(language) ? language : "en"
   }
 
   function startGeocode() {
-    if (!editingLocation || automaticLocation || geocodePendingQuery.length < 2) return
+    if (!editingLocation || automaticLocation || geocodePendingQuery.length < 2)
+      return
     geocodeActiveQuery = geocodePendingQuery
+    geocodeProc.generation = geocodeGeneration
     // The typed place goes to the helper on stdin, not in its (procfs-visible) argv.
-    geocodeProc.requestInput = JSON.stringify({ query: geocodeActiveQuery, language: geocodeLanguage() }) + "\n"
+    geocodeProc.requestInput = JSON.stringify({
+      query: geocodeActiveQuery,
+      language: geocodeLanguage()
+    }) + "\n"
     geocodeProc.stdinEnabled = true
     geocodeProc.running = true
   }
@@ -293,25 +327,33 @@ Panel {
   Process {
     id: geocodeProc
     property string requestInput: ""
+    property int generation: 0
+    readonly property bool wanted: generation === root.geocodeGeneration && root.editingLocation && !root.automaticLocation && root.geocodeActiveQuery === root.searchText.trim()
     command: FoamyNative.command(root.pluginDir, Model.HELPER, ["geocode"])
     onStarted: {
       write(requestInput)
       stdinEnabled = false
     }
-    onExited: function(exitCode) {
-      if (!root.editingLocation || root.geocodeActiveQuery !== root.searchText.trim()) return
+    onExited: function (exitCode) {
+      if (!geocodeProc.wanted)
+        return
       // No helper for this CPU: say so; searches only run on typing, never retried.
-      if (FoamyNative.unavailable(exitCode)) root.settingsError = FoamyNative.UNAVAILABLE_TEXT
-      else if (exitCode !== 0) root.settingsError = "Could not search for a location"
+      if (FoamyNative.unavailable(exitCode))
+        root.settingsError = FoamyNative.UNAVAILABLE_TEXT
+      else if (exitCode !== 0)
+        root.settingsError = "Could not search for a location"
     }
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        if (!root.editingLocation || root.automaticLocation || root.geocodeActiveQuery !== root.searchText.trim()) return
+        if (!geocodeProc.wanted)
+          return
+        var response
         try {
-          var response = JSON.parse(text)
+          response = JSON.parse(text)
         } catch (error) {
-          if (root.settingsError !== FoamyNative.UNAVAILABLE_TEXT) root.settingsError = "Could not search for a location"
+          if (root.settingsError !== FoamyNative.UNAVAILABLE_TEXT)
+            root.settingsError = "Could not search for a location"
           return
         }
         if (response.error) {
@@ -332,7 +374,7 @@ Panel {
       write(requestInput)
       stdinEnabled = false
     }
-    onExited: function(exitCode) {
+    onExited: function (exitCode) {
       root.savingLocation = false
       if (FoamyNative.unavailable(exitCode)) {
         root.settingsError = FoamyNative.UNAVAILABLE_TEXT
@@ -354,19 +396,36 @@ Panel {
     target: "foamy.weather"
     enabled: member.isLeader && !WeatherService.host
 
-    function open(): void { root.openFromHotkey() }
-    function close(): void { root.close() }
-    function show(): void { root.openFromHotkey() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.toggle() }
+    function open(): void {
+      root.openFromHotkey()
+    }
+    function close(): void {
+      root.close()
+    }
+    function show(): void {
+      root.openFromHotkey()
+    }
+    function hide(): void {
+      root.close()
+    }
+    function toggle(): void {
+      root.toggle()
+    }
     // Open first: the settings page is built with the popup body.
-    function edit(): void { root.openFromHotkey(); root.startEditingLocation() }
-    function refresh(): void { root.refresh(true) }
-    function current(): string { return WeatherService.currentReply() }
+    function edit(): void {
+      root.openFromHotkey()
+      root.startEditingLocation()
+    }
+    function refresh(): void {
+      root.refresh(true)
+    }
+    function current(): string {
+      return WeatherService.currentReply()
+    }
   }
 
   FoamyPopup {
-    id: popup
+    id: weatherPopup
     anchorItem: root.anchorItem
     owner: root.barIdentity
     bar: root.bar

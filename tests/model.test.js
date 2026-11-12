@@ -129,4 +129,24 @@ assert.deepEqual(Model.parseResolvedLocation('{"error":"Unknown option: %1","val
 assert.deepEqual(Model.parseResolvedLocation('{"error":"Could not find automatic location"}').errorValues, [])
 assert.equal(Model.formatAge, undefined, "the Norwegian-only age formatter is gone")
 
+// Search replies are untrusted: at most the five places asked for (count=5),
+// each with a string name and numeric coordinates the location file accepts.
+const place = (name, latitude, longitude, extra = {}) => ({ name, latitude, longitude, ...extra })
+assert.deepEqual(Model.parseGeocodingResults(JSON.stringify({ results: [
+  place("Oslo", 59.91, 10.75, { admin1: "Oslo", country: "Norway" }),
+  place("Bergen", 60.39, 5.32, { admin1: { nested: true }, country: "Norway" })
+] })), [
+  { name: "Oslo", description: "Oslo, Norway", latitude: 59.91, longitude: 10.75 },
+  { name: "Bergen", description: "Norway", latitude: 60.39, longitude: 5.32 }
+])
+assert.deepEqual(Model.parseGeocodingResults(JSON.stringify({ results: [
+  place("Text", "59.91", 10.75), place("North", 91, 0), place("East", 0, 181), place("Gone", null, 0),
+  place({ name: "Object" }, 1, 1), place("", 1, 1), null, "Oslo", place("Kept", -90, 180)
+] })).map(result => result.name), ["Kept"])
+const many = Array.from({ length: 2000 }, (_, i) => place("Place " + i, 1, 1))
+assert.deepEqual(Model.parseGeocodingResults(JSON.stringify({ results: many })).map(result => result.name),
+  ["Place 0", "Place 1", "Place 2", "Place 3", "Place 4"])
+for (const raw of ["", "{", "null", "[]", '{"results":"Oslo"}', '{"results":{"length":3}}', '{"error":true}'])
+  assert.deepEqual(Model.parseGeocodingResults(raw), [], raw)
+
 console.log("Weather model tests passed.")

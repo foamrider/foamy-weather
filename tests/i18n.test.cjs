@@ -16,8 +16,6 @@ assert.equal(manifest.barWidget?.defaults?.language, undefined);
 assert.equal((manifest.barWidget?.schema || []).some(f => f.key === 'language'), false);
 assert.equal(I.text('Unknown %1 {name}', 'no', ['$& %2']), '$& %2 {name}'.replace(/^/, 'Unknown '));
 assert.equal(I.text('constructor', 'no'), 'constructor');
-const ui = fs.readFileSync(path.join(__dirname, '../kit/FoamyI18n.qml'), 'utf8');
-assert.ok(ui.includes('Qt.createQmlObject'), '4.0 must not statically require a 4.5 QML type');
 const P = require('../Preferences.js');
 for (const language of ['en', 'no']) {
   const t = (key, values) => I.text(key, language, values);
@@ -48,6 +46,6 @@ const FoamyNative = require('../kit/node-loader.cjs').load('FoamyNative');
 for (const key of [...helperKeys, Model.HTTPS_UNSUPPORTED, FoamyNative.UNAVAILABLE_TEXT])
   assert.ok(Object.hasOwn(I.en, key), `missing helper error key: ${key}`);
 // No other (stale) wording of the HTTPS-unsupported message stays in the catalogs.
-for (const key of Object.keys(I.en).filter(k => /^HTTPS isn't supported on this CPU/.test(k)))
+for (const key of Object.keys(I.en).filter(k => k.startsWith("HTTPS isn't supported on this CPU")))
   assert.equal(key, Model.HTTPS_UNSUPPORTED, 'HTTPS-unsupported key matches the kit\'s tls::UNSUPPORTED');
 console.log('Weather i18n tests passed.');

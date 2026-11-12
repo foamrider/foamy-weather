@@ -93,8 +93,11 @@ location: ask again in a few seconds), `no-location` (no place chosen, or
 automatic location failed), `offline`, `unsupported` (no helper or HTTPS for
 this CPU) or `error` (the download failed). Strings are single-line plain
 text. A cold start answers `pending` for about 2 seconds while the network
-settles, then until the download ends (up to about 15 seconds; a cached
-forecast answers at once).
+settles, then until the download ends: usually a second or two, at most
+about 35 seconds when MET is slow (10 s for the forecast, then up to 8 s for
+each of three sunrise requests). The sunrise requests stop at the first one
+that fails and are skipped when the forecast download failed, so a dead
+network costs one deadline, not four. A cached forecast answers at once.
 
 ## Settings
 
@@ -111,7 +114,7 @@ default, as the popup would refuse it.
 | `animations` | `true` | Animated sky behind the current conditions |
 | `refreshMinutes` | `30` | Forecast refresh interval, 5–1440 minutes |
 | `locationRefreshMinutes` | `15` | Automatic-location refresh interval, 5–1440 minutes |
-| `requestUserAgent` | `""` | User-Agent for MET Norway and OpenStreetMap requests (printable ASCII, 200 characters); empty or blank uses `foamy-weather/<version> (+repository URL)` |
+| `requestUserAgent` | `""` | User-Agent for MET Norway and OpenStreetMap requests (printable ASCII, 200 characters); empty or blank uses `foamy-weather (+repository URL)` |
 
 The searched location is stored, owner-only, in
 `~/.local/state/omarchy/settings/foamy-weather-location.json` (under
@@ -119,8 +122,8 @@ The searched location is stored, owner-only, in
 (`weather.json` in the same directory) is used. Earlier versions kept it in
 `~/.config/omarchy/weather-location.local.json`: when the widget starts, a
 valid file there is copied to the new place, checked, and then removed. If
-both exist the new file wins and the old one is removed; an invalid old file is
-left alone.
+both exist the new file wins; the old one is removed only when it holds the
+same place, so a different or invalid old file is left alone.
 
 ## Privacy and network use
 
@@ -260,21 +263,32 @@ helper's test-only `FOAMY_WEATHER_TEST_CONNECT` and `SSL_CERT_FILE`). Nothing
 is sent to the real services, and all files go to temporary HOME/XDG
 directories.
 
+`tests/validate.sh` runs everything: foamy-kit's checks, the linters and
+formatters (pinned in `mise.toml`; run `mise install` first; findings that
+existed at adoption are in `tests/lint/*-baseline.txt`), the helper's Rust
+tests, and then `tests/suite.sh`, which runs the tests below. `--ci` is what
+CI runs (no Quickshell, no Omarchy host); `--fast` skips the Rust tests and
+the offscreen runtime tests. One by one:
+
 ```sh
 for t in tests/*.test.js tests/i18n.test.cjs; do node "$t"; done   # service.test.js: current() and the entry
 python3 -m unittest tests.test_clipboard tests.test_location_privacy
 bash tests/test-weather-location.sh
 FOAMY_HELPER="[\"$PWD/bin/aarch64/foamy-weather-helper\"]" node tests/weather-fetch.test.js   # and the two above
 bash tests/kit-check.sh
-python3 tests/i18n-runtime.py                  # live language switching (OMARCHY_PATH picks another tree)
+python3 "$FOAMY_KIT/preview/i18n_runtime.py" .  # live language switching (foamy-kit's shared check)
 python3 tests/runtime.py                       # needs foamy-kit (FOAMY_KIT)
+python3 tests/search-runtime.py                # the location search; needs foamy-kit
+python3 tests/fetch-runtime.py                 # the forecast fetch across place changes; needs foamy-kit
 python3 tests/sky-gpu.py                       # the sky on a GPU (eglfs on a render node); skips without one
 ```
 
 The offscreen tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
-(`FOAMY_HOST_45` picks another 4.5 tree). `tests/runtime.py` also runs on 4.0
-when `FOAMY_HOST_40` names a 4.0 shell tree; otherwise it prints a SKIP line
-for it.
+(`FOAMY_HOST_45` picks another 4.5 tree). runtime.py, search-runtime.py and
+fetch-runtime.py set the network state through foamy-kit's fake
+NetworkManager (`preview/fake_nm.py`, on the run's private system bus; it
+needs dbus-python and PyGObject): offline, and for fetch-runtime.py online
+again.
 
 `preview/Preview.qml` renders mock states with the foamy-kit preview harness
 (`FOAMY_HOST_45=/usr/share/omarchy/shell <foamy-kit>/preview/render.py . --host 4.5`).

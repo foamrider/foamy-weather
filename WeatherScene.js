@@ -42,7 +42,7 @@ function conditions(current, now, location) {
   var intensity = code.indexOf("heavy") === 0 ? 0.85 : code.indexOf("light") === 0 ? 0.2 : 0.5
   var amount = bounded(current && current.precipitationOneHour, -1, 0, 100)
   if (wet && amount > 0) intensity = Math.max(0.12, Math.min(1, Math.sqrt(amount / 10)))
-  var sun = { elevation: /_night$/.test(symbol) ? -0.5 : /_polartwilight$/.test(symbol) ? -0.06 : 0.6, azimuth: Math.PI }
+  var sun = { elevation: symbol.endsWith("_night") ? -0.5 : symbol.endsWith("_polartwilight") ? -0.06 : 0.6, azimuth: Math.PI }
   if (now instanceof Date && isFinite(now.getTime()) && location
       && typeof location.latitude === "number" && isFinite(location.latitude) && Math.abs(location.latitude) <= 90
       && typeof location.longitude === "number" && isFinite(location.longitude) && Math.abs(location.longitude) <= 180) {

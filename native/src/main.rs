@@ -37,6 +37,9 @@
 //!   are copied to the new name with their times when it is missing (the old
 //!   file stays). Sun caches older than 8 days (`find -mtime +7`) are removed
 //!   after the reply.
+//! - **Sunrise requests** go out only for days without a valid sun cache,
+//!   and none at all when the forecast refresh failed (`"stale":true`); the
+//!   first that fails (an error or an invalid reply) ends them for this run.
 //! - **Freshness**: a valid cache (0 < size ≤ limit, one JSON document of
 //!   the right shape) is used without a request when: `--force` and younger
 //!   than `MET_WEATHER_FORCE_MIN_AGE` s (default 60); else, when the meta has
@@ -53,7 +56,7 @@
 //! - **Env**: `MET_WEATHER_USER_AGENT` (non-empty, printable ASCII; else the
 //!   default below), `MET_WEATHER_CACHE_MAX_AGE`, `MET_WEATHER_FORCE_MIN_AGE`.
 //!
-//! ## `location --set | --clear | --migrate` (was weather-location.sh)
+//! ## `location --set | --migrate` (was weather-location.sh)
 //!
 //! The searched place, `${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/
 //! settings/foamy-weather-location.json` (directories made with the normal
@@ -65,11 +68,10 @@
 //!
 //! - `--set`: the location from stdin replaces the file atomically. Invalid:
 //!   `Invalid location` on stderr, exit 2.
-//! - `--clear` (any further arguments ignored): removes both files; exit 0,
-//!   1 when one could not be removed.
-//! - `--migrate`: no legacy file: exit 0. A valid state file wins (the
-//!   legacy file is removed); an invalid one, or an invalid legacy file, is
-//!   left alone (exit 0). Else the legacy location is linked into place
+//! - `--migrate`: no legacy file: exit 0. A valid state file wins; the
+//!   legacy file is removed only when it holds the same location (compared
+//!   after validation, so key order and extra keys don't matter), else it is
+//!   left alone, as it is when either file is invalid (exit 0). Else the legacy location is linked into place
 //!   without replacing a file that appeared meanwhile (a concurrent `--set`
 //!   wins; exit 0), read back (exit 1 if it differs), and the legacy file is
 //!   removed.
@@ -118,7 +120,7 @@
 //! `nominatim.openstreetmap.org` or `geocoding-api.open-meteo.com`, rustls
 //! with Graviola and the system trust store (`SSL_CERT_FILE`/`SSL_CERT_DIR`
 //! honoured), every socket under `foamy_helper::net::DeadlineStream` with
-//! the request's absolute deadline. `User-Agent: foamy-weather/1.4.0
+//! the request's absolute deadline. `User-Agent: foamy-weather
 //! (+https://github.com/foamrider/foamy-weather)` unless overridden (MET's
 //! terms require an identifying agent), `Accept: */*`, `Accept-Encoding:
 //! gzip, deflate`. Status 400 and above is a failure (curl `--fail`); no
@@ -160,7 +162,7 @@ fn main() -> ExitCode {
         Some("geocode") => geocode::main(&rest),
         _ => {
             eprintln!(
-                "Usage: foamy-weather-helper fetch [--force] | location --set|--clear|--migrate | resolve-location [--force] | geocode"
+                "Usage: foamy-weather-helper fetch [--force] | location --set|--migrate | resolve-location [--force] | geocode"
             );
             ExitCode::from(2)
         }
