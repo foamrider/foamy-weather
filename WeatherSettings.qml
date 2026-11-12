@@ -20,7 +20,9 @@ FoamySettingsPage {
   Connections {
     target: page.c
     ignoreUnknownSignals: true
-    function onSearchCleared() { locationField.text = "" }
+    function onSearchCleared() {
+      locationField.text = ""
+    }
   }
 
   FoamySettingsSection {
@@ -58,8 +60,9 @@ FoamySettingsPage {
       placeholderText: FoamyI18n.t("Search for a location")
       translate: FoamyI18n.t
       onTextEdited: page.c.searchEdited(text)
-      onPasteErrorChanged: if (pasteError) page.c.settingsError = pasteError
-      onKeyPressed: function(event) {
+      onPasteErrorChanged: if (pasteError)
+        page.c.settingsError = pasteError
+      onKeyPressed: function (event) {
         if (event.key === Qt.Key_Escape) {
           page.c.cancelEditingLocation()
           event.accepted = true
@@ -128,11 +131,19 @@ FoamySettingsPage {
       label: FoamyI18n.t("Units")
       value: page.c.units
       options: [
-        { value: "metric", label: FoamyI18n.t("Metric (°C, km/h, mm)") },
-        { value: "imperial", label: FoamyI18n.t("Imperial (°F, mph, in)") }
+        {
+          value: "metric",
+          label: FoamyI18n.t("Metric (°C, km/h, mm)")
+        },
+        {
+          value: "imperial",
+          label: FoamyI18n.t("Imperial (°F, mph, in)")
+        }
       ]
       enabled: !page.c.saving
-      onChanged: function(value) { page.c.savePreference("units", value) }
+      onChanged: function (value) {
+        page.c.savePreference("units", value)
+      }
     }
 
     FoamyToggle {

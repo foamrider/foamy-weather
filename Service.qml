@@ -25,26 +25,30 @@ QtObject {
 
   function panelCall(name) {
     var target = panel()
-    if (target && typeof target[name] === "function") target[name]()
+    if (target && typeof target[name] === "function")
+      target[name]()
   }
 
   function applyConfig(text) {
     var entry = Model.pluginEntry(text, "foamy.weather")
     // An unreadable or half-written shell.json keeps the last settings.
-    if (!entry.valid) return
+    if (!entry.valid)
+      return
     if (JSON.stringify(entry.settings) !== JSON.stringify(WeatherService.serviceSettings))
       WeatherService.serviceSettings = entry.settings
   }
 
   Component.onCompleted: {
     WeatherService.host = root
-    Qt.callLater(function() {
-      if (WeatherService.host === root) root.ipcLive = true
+    Qt.callLater(function () {
+      if (WeatherService.host === root)
+        root.ipcLive = true
     })
   }
   Component.onDestruction: {
     ipcLive = false
-    if (WeatherService.host === root) WeatherService.host = null
+    if (WeatherService.host === root)
+      WeatherService.host = null
   }
 
   // The scoped service API offers no read of the plugin's own entry; watch
@@ -62,22 +66,35 @@ QtObject {
     enabled: root.ipcLive
 
     // The popup belongs to the bar widget: these do nothing without one.
-    function open(): void { root.panelCall("openFromHotkey") }
-    function close(): void { root.panelCall("close") }
-    function show(): void { root.panelCall("openFromHotkey") }
-    function hide(): void { root.panelCall("close") }
-    function toggle(): void { root.panelCall("toggle") }
+    function open(): void {
+      root.panelCall("openFromHotkey")
+    }
+    function close(): void {
+      root.panelCall("close")
+    }
+    function show(): void {
+      root.panelCall("openFromHotkey")
+    }
+    function hide(): void {
+      root.panelCall("close")
+    }
+    function toggle(): void {
+      root.panelCall("toggle")
+    }
     function edit(): void {
       root.panelCall("openFromHotkey")
       root.panelCall("startEditingLocation")
     }
     function refresh(): void {
-      if (root.panel()) root.panel().refresh(true)
+      if (root.panel())
+        root.panel().refresh(true)
       else {
         WeatherService.touch()
         WeatherService.refresh(true)
       }
     }
-    function current(): string { return WeatherService.currentReply() }
+    function current(): string {
+      return WeatherService.currentReply()
+    }
   }
 }

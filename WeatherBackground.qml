@@ -32,7 +32,7 @@ Item {
   readonly property bool drawable: supported && shown && conditions.available && sky.status !== ShaderEffect.Error
   readonly property bool animating: drawable && animate
   // The shader could not be built; the view falls back to the plain band.
-  signal failed()
+  signal failed
   property real elapsed: 0
   property real windOffset: 41.7
   property real evolution: 7.3
@@ -41,7 +41,8 @@ Item {
   // A still frame: refresh the texture once when it becomes visible or the
   // scene inputs change, never on a clock.
   function stillFrame() {
-    if (drawable && !animate) sampledSky.scheduleUpdate()
+    if (drawable && !animate)
+      sampledSky.scheduleUpdate()
   }
   onDrawableChanged: stillFrame()
   // The still frame is a one-shot copy too: render it again in a new window.
@@ -131,9 +132,7 @@ Item {
     // vivid range (deepest behind the title and reading); a light theme's
     // dark text gets the sky lifted. Night skies in a dark theme are left
     // as they are.
-    property vector4d u_calm: root.lightTheme
-      ? Qt.vector4d(0, 0, 0, 0.2 + 0.4 * root.glare)
-      : Qt.vector4d(root.calmAmount, 0.32, 0.13, 0)
+    property vector4d u_calm: root.lightTheme ? Qt.vector4d(0, 0, 0, 0.2 + 0.4 * root.glare) : Qt.vector4d(root.calmAmount, 0.32, 0.13, 0)
     onStatusChanged: {
       if (status === ShaderEffect.Error) {
         console.warn("Weather background shader failed; keeping static header:", log)
@@ -157,7 +156,12 @@ Item {
     height: root.height
     visible: false
     layer.enabled: true
-    Rectangle { width: parent.width; height: parent.height + root.cornerRadius; radius: root.cornerRadius; color: "white" }
+    Rectangle {
+      width: parent.width
+      height: parent.height + root.cornerRadius
+      radius: root.cornerRadius
+      color: "white"
+    }
   }
 
   MultiEffect {
@@ -182,9 +186,18 @@ Item {
     // the surface and fades it into the body at the bottom.
     readonly property real amount: root.lightTheme ? 0.12 : 0.06
     gradient: Gradient {
-      GradientStop { position: 0; color: Qt.alpha(root.surfaceColor, veil.amount) }
-      GradientStop { position: 0.6; color: Qt.alpha(root.surfaceColor, veil.amount) }
-      GradientStop { position: root.height / Math.max(1, root.height + root.cornerRadius); color: root.surfaceColor }
+      GradientStop {
+        position: 0
+        color: Qt.alpha(root.surfaceColor, veil.amount)
+      }
+      GradientStop {
+        position: 0.6
+        color: Qt.alpha(root.surfaceColor, veil.amount)
+      }
+      GradientStop {
+        position: root.height / Math.max(1, root.height + root.cornerRadius)
+        color: root.surfaceColor
+      }
     }
   }
 }
