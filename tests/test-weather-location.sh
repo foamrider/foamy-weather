@@ -28,7 +28,10 @@ fail() {
 printf '%s\n' '{"address":{"town":"Example Town"}}' >"$test_root/net/reverse.json"
 python3 "$plugin_root/tests/fakenet.py" serve "$test_root/net" &
 server_pid=$!
-for _ in $(seq 100); do [[ -e $test_root/net/port ]] && break; sleep 0.1; done
+for _ in $(seq 100); do
+  [[ -e $test_root/net/port ]] && break
+  sleep 0.1
+done
 [[ -e $test_root/net/port ]] || fail "the loopback server did not start"
 for variable in http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY SSL_CERT_DIR; do
   unset "$variable"
