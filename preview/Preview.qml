@@ -15,7 +15,7 @@ Item {
     "sky-fog", "sky-overcast-day", "sky-live", "sky-sun", "sky-snow", "sky-night", "sky-storm", "long-text"]
   property string previewState: "forecast"
   property int settleMs: 700
-  readonly property Item popup: popup
+  readonly property Item popup: previewPopup
 
   // Sky states: the band over different MET conditions (Bergen). The
   // offscreen software renderer draws no shader, so there they show the
@@ -95,7 +95,7 @@ Item {
   }
 
   FoamyPopup {
-    id: popup
+    id: previewPopup
     anchorItem: preview.anchorItem
     bar: preview.bar
     open: true

@@ -26,7 +26,7 @@ Panel {
   property bool openedFromHotkey: false
   readonly property var barIdentity: hostWidget || root
   readonly property string entryId: hostWidget && hostWidget.moduleName ? hostWidget.moduleName : root.moduleName
-  readonly property alias popup: popup
+  readonly property alias popup: weatherPopup
 
   // --- shared state ----------------------------------------------------------------
   FoamyMember { id: member; scope: "weather"; demanding: root.opened }
@@ -80,7 +80,7 @@ Panel {
   readonly property bool automaticLabel: automaticLocation && String(configuredLocationState.source || "").indexOf("geoclue") === 0
 
   // Forecast rows exist only while the popup is shown (or fading out).
-  readonly property bool contentActive: root.opened || popup.visible
+  readonly property bool contentActive: root.opened || weatherPopup.visible
   property date now: new Date()
   property int selectedDayIndex: 0
 
@@ -316,8 +316,9 @@ Panel {
       waitForEnd: true
       onStreamFinished: {
         if (!geocodeProc.wanted) return
+        var response
         try {
-          var response = JSON.parse(text)
+          response = JSON.parse(text)
         } catch (error) {
           if (root.settingsError !== FoamyNative.UNAVAILABLE_TEXT) root.settingsError = "Could not search for a location"
           return
@@ -374,7 +375,7 @@ Panel {
   }
 
   FoamyPopup {
-    id: popup
+    id: weatherPopup
     anchorItem: root.anchorItem
     owner: root.barIdentity
     bar: root.bar

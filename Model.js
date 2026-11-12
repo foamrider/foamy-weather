@@ -344,7 +344,7 @@ function descriptionForSymbol(symbol) {
 function iconForSymbol(symbol) {
   var raw = String(symbol || "cloudy")
   var code = normalizedSymbol(raw)
-  var night = /_night$/.test(raw)
+  var night = raw.endsWith("_night")
   if (code === "clearsky" || code === "fair") return night ? "\u{f0594}" : "\u{f0599}"
   if (code === "partlycloudy") return night ? "\u{f0f31}" : "\u{f0595}"
   if (code === "cloudy") return "\u{f0590}"

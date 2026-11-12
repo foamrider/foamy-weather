@@ -55,7 +55,10 @@ def make_certs(directory):
     """A CA and a server certificate for HOSTS (EC P-256, two days)."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    run = lambda *argv: subprocess.run(['openssl', *argv], check=True, capture_output=True)
+
+    def run(*argv):
+        return subprocess.run(['openssl', *argv], check=True, capture_output=True)
+
     run('req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-days', '2',
         '-subj', '/CN=foamy-weather test CA', '-addext', 'basicConstraints=critical,CA:TRUE',
         '-addext', 'keyUsage=critical,keyCertSign', '-keyout', str(directory / 'ca.key'),
@@ -159,7 +162,7 @@ class Server:
         self.thread.start()
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, *_exc):
         self.httpd.shutdown()
         self.httpd.server_close()
 

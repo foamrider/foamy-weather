@@ -10,6 +10,8 @@ server_pid=""
 trap '[[ -z $server_pid ]] || kill "$server_pid" 2>/dev/null; rm -rf "$test_root"' EXIT
 
 plugin_root=$(cd -- "$(dirname "$0")/.." && pwd)
+# helper_argv fills these through mapfile's name reference.
+resolver=() location_writer=()
 helper_argv() {
   mapfile -d '' -t "$1" < <(python3 "$plugin_root/tests/fakenet.py" argv "$2" </dev/null)
 }
@@ -31,7 +33,8 @@ for _ in $(seq 100); do [[ -e $test_root/net/port ]] && break; sleep 0.1; done
 for variable in http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY SSL_CERT_DIR; do
   unset "$variable"
 done
-export FOAMY_WEATHER_TEST_CONNECT="127.0.0.1:$(cat "$test_root/net/port")"
+FOAMY_WEATHER_TEST_CONNECT="127.0.0.1:$(cat "$test_root/net/port")"
+export FOAMY_WEATHER_TEST_CONNECT
 export SSL_CERT_FILE="$test_root/net/ca.pem"
 
 cat >"$mock_bin/where-am-i" <<'EOF'
