@@ -1,4 +1,4 @@
-//! `location --set | --clear | --migrate`: the searched place
+//! `location --set | --migrate`: the searched place
 //! (weather-location.sh).
 
 use std::ffi::OsString;
@@ -14,8 +14,7 @@ use serde_json::Value;
 use crate::util;
 
 const MAX_LOCATION: u64 = 64 * 1024;
-const USAGE: &str =
-    "Usage: foamy-weather-helper location --set < location.json | --clear | --migrate";
+const USAGE: &str = "Usage: foamy-weather-helper location --set < location.json | --migrate";
 
 struct Paths {
     state_root: PathBuf,
@@ -159,15 +158,6 @@ pub fn main(args: &[OsString]) -> ExitCode {
     let paths = paths();
     let action = args.first().map(|a| a.as_os_str());
     match action.and_then(|a| a.to_str()) {
-        Some("--clear") => {
-            let location = util::remove(&paths.location);
-            let legacy = util::remove(&paths.legacy);
-            if location.is_ok() && legacy.is_ok() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
-            }
-        }
         Some("--migrate") if args.len() == 1 => migrate(&paths),
         Some("--set") if args.len() == 1 => set(&paths),
         _ => {

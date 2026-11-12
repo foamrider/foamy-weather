@@ -56,7 +56,7 @@
 //! - **Env**: `MET_WEATHER_USER_AGENT` (non-empty, printable ASCII; else the
 //!   default below), `MET_WEATHER_CACHE_MAX_AGE`, `MET_WEATHER_FORCE_MIN_AGE`.
 //!
-//! ## `location --set | --clear | --migrate` (was weather-location.sh)
+//! ## `location --set | --migrate` (was weather-location.sh)
 //!
 //! The searched place, `${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/
 //! settings/foamy-weather-location.json` (directories made with the normal
@@ -68,8 +68,6 @@
 //!
 //! - `--set`: the location from stdin replaces the file atomically. Invalid:
 //!   `Invalid location` on stderr, exit 2.
-//! - `--clear` (any further arguments ignored): removes both files; exit 0,
-//!   1 when one could not be removed.
 //! - `--migrate`: no legacy file: exit 0. A valid state file wins (the
 //!   legacy file is removed); an invalid one, or an invalid legacy file, is
 //!   left alone (exit 0). Else the legacy location is linked into place
@@ -163,7 +161,7 @@ fn main() -> ExitCode {
         Some("geocode") => geocode::main(&rest),
         _ => {
             eprintln!(
-                "Usage: foamy-weather-helper fetch [--force] | location --set|--clear|--migrate | resolve-location [--force] | geocode"
+                "Usage: foamy-weather-helper fetch [--force] | location --set|--migrate | resolve-location [--force] | geocode"
             );
             ExitCode::from(2)
         }

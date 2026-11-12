@@ -60,10 +60,7 @@ jq -e '
 [[ $(stat -c %a "$location_file") == 600 ]] || fail "manual location must be owner-only"
 [[ ! -e $legacy_file ]] || fail "manual location must not be written to config"
 
-printf '%s\n' '{"name":"Old","latitude":1,"longitude":2}' >"$legacy_file"
-"${location_writer[@]}" --clear
-[[ ! -e $location_file ]] || fail "manual location was not cleared"
-[[ ! -e $legacy_file ]] || fail "legacy location was not cleared"
+rm -f "$location_file"
 
 # Migration: a valid legacy file moves to state once, owner-only.
 "${location_writer[@]}" --migrate || fail "migrate without any file must succeed"
@@ -84,7 +81,7 @@ jq -e '.name == "Old Town"' "$location_file" >/dev/null || fail "legacy location
 [[ ! -e $legacy_file ]] || fail "superseded legacy location was not removed"
 
 # An invalid legacy file is left alone, and so is an unreadable state file.
-"${location_writer[@]}" --clear
+rm -f "$location_file" "$legacy_file"
 printf '%s\n' '{"name":"Broken","latitude":91,"longitude":2}' >"$legacy_file"
 "${location_writer[@]}" --migrate || fail "migrate with an invalid legacy file must succeed"
 [[ ! -e $location_file ]] || fail "invalid legacy location was migrated"
@@ -94,10 +91,12 @@ printf '%s\n' '{broken' >"$location_file"
 "${location_writer[@]}" --migrate || fail "migrate with an invalid state file must succeed"
 [[ $(cat "$location_file") == '{broken' ]] || fail "invalid state location was overwritten"
 jq -e '.name == "Old"' "$legacy_file" >/dev/null || fail "legacy location removed without a valid state location"
-"${location_writer[@]}" --clear
+rm -f "$location_file" "$legacy_file"
 
-# Usage errors: exit 2, nothing written.
-for usage in "--bogus" "--set extra"; do
+# Usage errors: exit 2, nothing written or removed. `--clear` had no caller
+# and was removed; it must not delete the files any more.
+printf '%s\n' '{"name":"Old","latitude":1,"longitude":2}' >"$legacy_file"
+for usage in "--bogus" "--set extra" "--clear"; do
   set +e
   # shellcheck disable=SC2086
   "${location_writer[@]}" $usage </dev/null 2>/dev/null
@@ -106,6 +105,8 @@ for usage in "--bogus" "--set extra"; do
   [[ $status == 2 ]] || fail "usage error '$usage' must exit 2 (got $status)"
 done
 [[ ! -e $location_file ]] || fail "a usage error wrote a location"
+[[ -e $legacy_file ]] || fail "a usage error removed the legacy location"
+rm -f "$legacy_file"
 
 geoclue=$("${resolver[@]}" --force)
 jq -e '
