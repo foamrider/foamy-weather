@@ -11,6 +11,7 @@ its argv (read from /proc while the search runs).
 Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit) and openssl.
 Temporary HOME/XDG dirs; nothing is sent to the real services.
 """
+import json
 import os
 import sys
 import tempfile
@@ -25,13 +26,15 @@ sys.path.insert(0, str(ROOT / "tests"))
 import fakenet  # noqa: E402
 import harness  # noqa: E402
 
-# Each search answers after this delay, so the first is still running when
-# the text changes. The steps below wait on conditions, not on this.
+# Each search answers after this delay, so it is still running when the text
+# changes. The steps below wait on conditions (the request has reached the
+# stand-in), not on this.
 SEARCH_DELAY = 1.5
 
 SHELL = r'''
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import "harness"
 import "plugin" as Weather
 
@@ -51,6 +54,9 @@ ShellRoot {
 
   MockBar { id: bar }
   Item { id: holder }
+  // One line per search request that reached the stand-in.
+  FileView { id: arrived; path: ARRIVED; blockLoading: true; printErrors: false }
+  function arrivals() { arrived.reload(); return arrived.text().split("\n").length - 1 }
 
   Component.onCompleted: {
     // Offline, so no forecast is fetched; the search does not wait for the
@@ -82,8 +88,8 @@ ShellRoot {
         shell.step++
         break
       case 1:
-        // The first search is under way: type a space after the word.
-        if (!a.searching) return
+        // The first search is at the stand-in: type a space after the word.
+        if (!a.searching || shell.arrivals() < 1) return
         a.searchEdited("Oslo ")
         shell.step++
         break
@@ -97,7 +103,8 @@ ShellRoot {
         shell.step++
         break
       case 3:
-        if (!a.searching) return
+        // The Bergen search (the third request) is at the stand-in.
+        if (!a.searching || shell.arrivals() < 3) return
         // Clearing the field cancels the search; its end changes nothing.
         a.searchEdited("")
         shell.step++
@@ -116,6 +123,7 @@ ShellRoot {
 
 # The argv of every foamy-weather-helper (and wrapper) seen during a search.
 ARGVS = []
+ARRIVED = None
 
 
 def helper_argvs():
@@ -135,6 +143,8 @@ def helper_argvs():
 
 def slow_search(handler):
     ARGVS.extend(helper_argvs())
+    with ARRIVED.open("a") as log:
+        log.write(handler.path + "\n")
     time.sleep(SEARCH_DELAY)
     body = fakenet.SEARCH.encode()
     try:
@@ -150,17 +160,20 @@ def slow_search(handler):
 
 
 def main():
+    global ARRIVED
     with tempfile.TemporaryDirectory(prefix="foamy-weather-search-") as certs_dir:
         certs = fakenet.make_certs(certs_dir)
+        ARRIVED = Path(certs_dir) / "arrived"
+        shell = SHELL.replace("ARRIVED", json.dumps(str(ARRIVED)))
         with fakenet.Server(certs, {'search': slow_search}) as server:
-            run = harness.Run("4.5", SHELL, plugin=ROOT, prefix="foamy-weather-search-")
+            run = harness.Run("4.5", shell, plugin=ROOT, prefix="foamy-weather-search-")
             run.env = fakenet.network_env(run.env, server.port, certs['ca'])
             run.run(timeout=60)
             searches = server.paths('search')
     checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
-    if run.ok and len(searches) < 2:
+    if run.ok and len(searches) != 3:
         run.ok = False
-        print(f"4.5: expected at least two searches at the stand-in, saw {len(searches)}")
+        print(f"4.5: expected three searches at the stand-in, saw {searches}")
     if run.ok and not any("geocode" in argv for argv in ARGVS):
         run.ok = False
         print(f"4.5: the search helper was not seen while it ran: {ARGVS}")
