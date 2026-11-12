@@ -52,6 +52,7 @@ ShellRoot {
   MockBar { id: barA }
   MockBar { id: barB }
   Item { id: holder }
+  FoamyWait { id: wait }
 
   Component.onCompleted: {
     // Offline (the harness has no system bus, so no NetworkManager): nothing
@@ -68,7 +69,13 @@ ShellRoot {
     var entry = Qt.createComponent(Qt.resolvedUrl("plugin/Service.qml"))
     if (entry.status !== Component.Ready) { console.log("FOAMY FAIL load service " + entry.errorString()); Qt.quit(); return }
     service = entry.createObject(null)
-    tick.start()
+    // The steps start once the helper has migrated the seeded legacy file
+    // (a real process, slow on a loaded machine); each later step only waits
+    // for QML to settle.
+    wait.waitFor(function() {
+      return !Weather.WeatherService.locationMigrateProc.running
+        && Weather.WeatherService.localLocationState.name === "Legacy Town"
+    }, 30000, function() { tick.start() }, "the legacy location is migrated")
   }
 
   readonly property var sample: ({ forecast: { type: "Feature", properties: { timeseries: [
