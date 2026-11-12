@@ -74,11 +74,15 @@ jq -e '. == {name: "Old Town", latitude: 59.91, longitude: 10.75}' "$location_fi
 [[ ! -e $legacy_file ]] || fail "legacy location was not removed after migrating"
 [[ -z $(find "$XDG_STATE_HOME/omarchy/settings" -name '.*') ]] || fail "migrate left a temp file"
 
-# Both present: the state file wins and the legacy file goes.
-printf '%s\n' '{"name":"Stale","latitude":1,"longitude":2}' >"$legacy_file"
+# Both present: the state file wins. A legacy file that holds another place
+# (rewritten after a downgrade, say) is kept; one with the same place goes.
+printf '%s\n' '{"name":"Newer","latitude":1,"longitude":2}' >"$legacy_file"
 "${location_writer[@]}" --migrate || fail "migrate with both files failed"
 jq -e '.name == "Old Town"' "$location_file" >/dev/null || fail "legacy location replaced the state location"
-[[ ! -e $legacy_file ]] || fail "superseded legacy location was not removed"
+jq -e '.name == "Newer"' "$legacy_file" >/dev/null || fail "a different legacy location was removed"
+printf '%s\n' '{"longitude":10.75,"name":"Old Town","latitude":59.91,"extra":1}' >"$legacy_file"
+"${location_writer[@]}" --migrate || fail "migrate with the same location failed"
+[[ ! -e $legacy_file ]] || fail "an already migrated legacy location was not removed"
 
 # An invalid legacy file is left alone, and so is an unreadable state file.
 rm -f "$location_file" "$legacy_file"

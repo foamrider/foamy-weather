@@ -68,9 +68,10 @@
 //!
 //! - `--set`: the location from stdin replaces the file atomically. Invalid:
 //!   `Invalid location` on stderr, exit 2.
-//! - `--migrate`: no legacy file: exit 0. A valid state file wins (the
-//!   legacy file is removed); an invalid one, or an invalid legacy file, is
-//!   left alone (exit 0). Else the legacy location is linked into place
+//! - `--migrate`: no legacy file: exit 0. A valid state file wins; the
+//!   legacy file is removed only when it holds the same location (compared
+//!   after validation, so key order and extra keys don't matter), else it is
+//!   left alone, as it is when either file is invalid (exit 0). Else the legacy location is linked into place
 //!   without replacing a file that appeared meanwhile (a concurrent `--set`
 //!   wins; exit 0), read back (exit 1 if it differs), and the legacy file is
 //!   removed.

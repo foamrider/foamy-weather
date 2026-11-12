@@ -122,8 +122,8 @@ The searched location is stored, owner-only, in
 (`weather.json` in the same directory) is used. Earlier versions kept it in
 `~/.config/omarchy/weather-location.local.json`: when the widget starts, a
 valid file there is copied to the new place, checked, and then removed. If
-both exist the new file wins and the old one is removed; an invalid old file is
-left alone.
+both exist the new file wins; the old one is removed only when it holds the
+same place, so a different or invalid old file is left alone.
 
 ## Privacy and network use
 
