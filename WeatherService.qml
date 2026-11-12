@@ -350,8 +350,9 @@ QtObject {
   }
 
   // No outer timeout: the helper bounds each request itself (3 s to connect,
-  // 10 s for the forecast, 8 s for each of up to three sunrise requests), so a
-  // fetch ends within about 35 s and `loading` always settles in finishWeather.
+  // 10 s for the forecast, 8 s for each of up to three sunrise requests, which
+  // stop at the first failure), so a fetch ends within about 35 s and
+  // `loading` always settles in finishWeather.
   property Process weatherProc: Process {
     property string requestInput: ""
     property int generation: 0

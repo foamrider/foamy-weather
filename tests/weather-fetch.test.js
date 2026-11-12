@@ -109,8 +109,8 @@ async function fixture(t) {
         "temporary files must be cleaned up");
       return JSON.parse(stdout);
     },
-    async seedSun(body) {
-      for (const offset of [0, 1, 2]) {
+    async seedSun(body, offsets = [0, 1, 2]) {
+      for (const offset of offsets) {
         const date = (await exec("date", ["-d", `+${offset} day`, "+%Y-%m-%d"])).stdout.trim();
         await fs.writeFile(path.join(cache, `sun-${cacheKey}-${date}.json`), body);
       }
@@ -205,8 +205,36 @@ for (const [label, response] of Object.entries({
     assert.equal(report.stale, false);
     assert.ok(report.sun.every(day => day.sunrise === "" && day.sunset === ""));
     assert.deepEqual(await files(f.cache), [path.basename(f.forecastPath)]);
+    // The next two days would fail the same way: one sunrise request only.
+    assert.deepEqual(f.requests, ["forecast", "sun"]);
   });
 }
+
+test("a sunrise request that hangs costs one deadline, not three", async t => {
+  const f = await fixture(t);
+  f.responses.sun = { handle: () => {} };
+  const started = Date.now();
+  const report = await f.run();
+  const elapsed = Date.now() - started;
+  assert.equal(report.stale, false);
+  assert.ok(report.sun.every(day => day.sunrise === "" && day.sunset === ""));
+  assert.deepEqual(f.requests, ["forecast", "sun"]);
+  assert.ok(elapsed >= 7500 && elapsed < 16000, `took ${elapsed} ms`);
+});
+
+test("a failed forecast refresh sends no sunrise request and keeps the cached days", async t => {
+  const f = await fixture(t);
+  await f.run();
+  for (const name of await files(f.cache)) if (name.startsWith("sun-")) await fs.unlink(path.join(f.cache, name));
+  await f.seedSun(sun, [0]);
+  f.requests.length = 0;
+  f.responses.forecast.status = 503;
+  const report = await f.run(true);
+  assert.equal(report.stale, true);
+  assert.deepEqual(f.requests, ["forecast"], "offline: no sunrise requests after the forecast failed");
+  assert.ok(report.sun[0].sunrise && report.sun[0].sunset, "a cached day is still reported");
+  assert.ok(report.sun.slice(1).every(day => day.sunrise === "" && day.sunset === ""));
+});
 
 for (const label of ["oversized", "malformed"]) {
   test(`${label} existing caches are rejected and can be replaced`, async t => {

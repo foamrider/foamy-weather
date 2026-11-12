@@ -95,7 +95,9 @@ this CPU) or `error` (the download failed). Strings are single-line plain
 text. A cold start answers `pending` for about 2 seconds while the network
 settles, then until the download ends: usually a second or two, at most
 about 35 seconds when MET is slow (10 s for the forecast, then up to 8 s for
-each of three sunrise requests); a cached forecast answers at once.
+each of three sunrise requests). The sunrise requests stop at the first one
+that fails and are skipped when the forecast download failed, so a dead
+network costs one deadline, not four. A cached forecast answers at once.
 
 ## Settings
 

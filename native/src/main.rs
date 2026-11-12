@@ -37,6 +37,9 @@
 //!   are copied to the new name with their times when it is missing (the old
 //!   file stays). Sun caches older than 8 days (`find -mtime +7`) are removed
 //!   after the reply.
+//! - **Sunrise requests** go out only for days without a valid sun cache,
+//!   and none at all when the forecast refresh failed (`"stale":true`); the
+//!   first that fails (an error or an invalid reply) ends them for this run.
 //! - **Freshness**: a valid cache (0 < size ≤ limit, one JSON document of
 //!   the right shape) is used without a request when: `--force` and younger
 //!   than `MET_WEATHER_FORCE_MIN_AGE` s (default 60); else, when the meta has
