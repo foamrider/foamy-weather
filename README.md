@@ -274,9 +274,7 @@ python3 tests/sky-gpu.py                       # the sky on a GPU (eglfs on a re
 ```
 
 The offscreen tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
-(`FOAMY_HOST_45` picks another 4.5 tree). `tests/runtime.py` also runs on 4.0
-when `FOAMY_HOST_40` names a 4.0 shell tree; otherwise it prints a SKIP line
-for it.
+(`FOAMY_HOST_45` picks another 4.5 tree).
 
 `preview/Preview.qml` renders mock states with the foamy-kit preview harness
 (`FOAMY_HOST_45=/usr/share/omarchy/shell <foamy-kit>/preview/render.py . --host 4.5`).

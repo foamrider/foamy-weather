@@ -20,8 +20,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"))
-# 4.5 is the installed shell (FOAMY_HOST_45 overrides it); 4.0 runs only when
-# FOAMY_HOST_40 names a 4.0 shell tree. Set before the harness reads them.
+# 4.5 is the installed shell (FOAMY_HOST_45 overrides it). Set before the
+# harness reads it.
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
 import harness  # noqa: E402

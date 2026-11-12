@@ -3,11 +3,10 @@ the shared service, leader election, lazy popup body, settings read through
 the schema and saving, moving a legacy searched location to state, report
 retention across a location change, the hourly header, the sky's motion
 gates, and the service entry beside the widgets (one IPC handler, settings
-from its shell.json entry, current() on demand and its idle timeout). The host is the installed 4.5 shell (FOAMY_HOST_45 picks another 4.5
-tree); 4.0 runs only when FOAMY_HOST_40 names a 4.0 shell tree, else it
-prints a SKIP line.
+from its shell.json entry, current() on demand and its idle timeout). The
+host is the installed 4.5 shell (FOAMY_HOST_45 picks another 4.5 tree).
 
-  python3 tests/runtime.py [--host 4.0|4.5|both]
+  python3 tests/runtime.py
 
 Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit). Temporary
 HOME/XDG dirs; automatic location is off and the network never settles, so
@@ -20,8 +19,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"))
-# 4.5 is the installed shell (FOAMY_HOST_45 overrides it); 4.0 runs only when
-# FOAMY_HOST_40 names a 4.0 shell tree. Set before the harness reads them.
+# 4.5 is the installed shell (FOAMY_HOST_45 overrides it). Set before the
+# harness reads it.
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
 import harness  # noqa: E402
@@ -271,35 +270,28 @@ ShellRoot {
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="both", choices=["4.0", "4.5", "both"])
-    args = parser.parse_args()
-    status = 0
-    for host in (["4.0", "4.5"] if args.host == "both" else [args.host]):
-        if host == "4.0" and not os.environ.get("FOAMY_HOST_40"):
-            print("4.0: SKIP (set FOAMY_HOST_40 to a 4.0 shell tree to run it)")
-            continue
-        run = harness.Run(host, SHELL, plugin=ROOT, prefix="foamy-weather-runtime-")
-        home = run.base / "home"
-        legacy = home / ".config/omarchy/weather-location.local.json"
-        legacy.parent.mkdir(parents=True, exist_ok=True)
-        legacy.write_text('{"name":"Legacy Town","latitude":69.65,"longitude":18.96}\n')
-        (home / ".config/omarchy/shell.json").write_text(
-            '{"version":1,"plugins":[{"id":"foamy.weather","units":"imperial","language":"nb"}]}\n')
-        run.run(timeout=60)
-        checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
-        state = home / ".local/state/omarchy/settings/foamy-weather-location.json"
-        if legacy.exists() or not state.exists() or (state.stat().st_mode & 0o777) != 0o600:
-            run.ok = False
-            print(f"{host}: the legacy location was not moved to an owner-only state file")
-        if run.ok:
-            print(f"{host}: {len(checks)} checks passed")
-            run.cleanup()
-        else:
-            status = 1
-            print(f"{host}: FAILED (log {run.base}/qs.log)")
-            print("\n".join(run.failures() or run.log.splitlines()[-30:]))
-    sys.exit(status)
+    argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args()
+    host = "4.5"
+    run = harness.Run(host, SHELL, plugin=ROOT, prefix="foamy-weather-runtime-")
+    home = run.base / "home"
+    legacy = home / ".config/omarchy/weather-location.local.json"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text('{"name":"Legacy Town","latitude":69.65,"longitude":18.96}\n')
+    (home / ".config/omarchy/shell.json").write_text(
+        '{"version":1,"plugins":[{"id":"foamy.weather","units":"imperial","language":"nb"}]}\n')
+    run.run(timeout=60)
+    checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
+    state = home / ".local/state/omarchy/settings/foamy-weather-location.json"
+    if legacy.exists() or not state.exists() or (state.stat().st_mode & 0o777) != 0o600:
+        run.ok = False
+        print(f"{host}: the legacy location was not moved to an owner-only state file")
+    if run.ok:
+        print(f"{host}: {len(checks)} checks passed")
+        run.cleanup()
+        sys.exit(0)
+    print(f"{host}: FAILED (log {run.base}/qs.log)")
+    print("\n".join(run.failures() or run.log.splitlines()[-30:]))
+    sys.exit(1)
 
 
 if __name__ == "__main__":
