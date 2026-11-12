@@ -114,7 +114,7 @@ default, as the popup would refuse it.
 | `animations` | `true` | Animated sky behind the current conditions |
 | `refreshMinutes` | `30` | Forecast refresh interval, 5–1440 minutes |
 | `locationRefreshMinutes` | `15` | Automatic-location refresh interval, 5–1440 minutes |
-| `requestUserAgent` | `""` | User-Agent for MET Norway and OpenStreetMap requests (printable ASCII, 200 characters); empty or blank uses `foamy-weather/<version> (+repository URL)` |
+| `requestUserAgent` | `""` | User-Agent for MET Norway and OpenStreetMap requests (printable ASCII, 200 characters); empty or blank uses `foamy-weather (+repository URL)` |
 
 The searched location is stored, owner-only, in
 `~/.local/state/omarchy/settings/foamy-weather-location.json` (under

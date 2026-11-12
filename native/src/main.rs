@@ -121,7 +121,7 @@
 //! `nominatim.openstreetmap.org` or `geocoding-api.open-meteo.com`, rustls
 //! with Graviola and the system trust store (`SSL_CERT_FILE`/`SSL_CERT_DIR`
 //! honoured), every socket under `foamy_helper::net::DeadlineStream` with
-//! the request's absolute deadline. `User-Agent: foamy-weather/1.4.0
+//! the request's absolute deadline. `User-Agent: foamy-weather
 //! (+https://github.com/foamrider/foamy-weather)` unless overridden (MET's
 //! terms require an identifying agent), `Accept: */*`, `Accept-Encoding:
 //! gzip, deflate`. Status 400 and above is a failure (curl `--fail`); no

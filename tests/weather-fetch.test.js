@@ -433,7 +433,7 @@ test("identifies the plugin to MET, caps Expires at six hours and reports local 
   const f = await fixture(t);
   f.responses.forecast.headers = { Expires: new Date(Date.now() + 24 * 3600 * 1000).toUTCString() };
   const report = await f.run();
-  assert.equal(f.forecastHeaders[0]["user-agent"], "foamy-weather/1.4.0 (+https://github.com/foamrider/foamy-weather)");
+  assert.equal(f.forecastHeaders[0]["user-agent"], "foamy-weather (+https://github.com/foamrider/foamy-weather)");
   const [expires, lastModified] = (await fs.readFile(f.forecastPath.replace(/\.json$/, ".meta"), "utf8")).split("\n");
   const now = Math.floor(Date.now() / 1000);
   assert.ok(Number(expires) > now + 21500 && Number(expires) <= now + 21600, `Expires ${expires}`);

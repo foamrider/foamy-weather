@@ -162,7 +162,7 @@ done
         host, path, headers = self.server.log[-1]
         self.assertEqual(host, 'geocoding-api.open-meteo.com')
         self.assertEqual(path, '/v1/search?name=B%C3%B8%20i%20Telemark&count=5&language=no&format=json')
-        self.assertTrue(headers['User-Agent'].startswith('foamy-weather/'))
+        self.assertEqual(headers['User-Agent'], 'foamy-weather (+https://github.com/foamrider/foamy-weather)')
         # An unknown language reads as English; the query never reaches argv.
         self.run_helper('geocode', payload=json.dumps({'query': 'Oslo', 'language': 'xx-YY'}))
         self.assertIn('language=en&', self.server.log[-1][1])

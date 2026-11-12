@@ -25,9 +25,9 @@ pub mod keys {
     pub const SEARCH_FAILED: &str = "Could not search for a location";
 }
 
-/// MET's terms ask for an agent that identifies the application.
-pub const DEFAULT_USER_AGENT: &str =
-    "foamy-weather/1.4.0 (+https://github.com/foamrider/foamy-weather)";
+/// MET's terms ask for an agent that identifies the application. No
+/// version: a hard-coded one went stale with every release.
+pub const DEFAULT_USER_AGENT: &str = "foamy-weather (+https://github.com/foamrider/foamy-weather)";
 
 /// `{"error":key,"values":[…]}`, the scripts' `json_error`.
 pub fn error_json(key: &str, values: &[&str]) -> String {
