@@ -13,6 +13,7 @@ HOME/XDG dirs; automatic location is off and the network is down
 (`testNetworkConnected`), so only the location helper runs (to migrate) and no
 network request starts.
 """
+
 import argparse
 import os
 import sys
@@ -26,7 +27,7 @@ os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
 import harness  # noqa: E402
 
-SHELL = r'''
+SHELL = r"""
 import QtQuick
 import Quickshell
 import "harness"
@@ -273,7 +274,7 @@ ShellRoot {
     return null
   }
 }
-'''
+"""
 
 
 def main():
@@ -285,7 +286,8 @@ def main():
     legacy.parent.mkdir(parents=True, exist_ok=True)
     legacy.write_text('{"name":"Legacy Town","latitude":69.65,"longitude":18.96}\n')
     (home / ".config/omarchy/shell.json").write_text(
-        '{"version":1,"plugins":[{"id":"foamy.weather","units":"imperial","language":"nb"}]}\n')
+        '{"version":1,"plugins":[{"id":"foamy.weather","units":"imperial","language":"nb"}]}\n'
+    )
     run.run(timeout=60)
     checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
     state = home / ".local/state/omarchy/settings/foamy-weather-location.json"

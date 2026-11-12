@@ -3,6 +3,7 @@
 The helper runs as a process (``fakenet.helper_command``: the bundled
 binary; ``FOAMY_HELPER`` overrides it) against the loopback HTTPS stand-in in ``fakenet.py``.
 """
+
 import hashlib
 import json
 import os
@@ -17,34 +18,41 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fakenet  # noqa: E402
-LATITUDE, LONGITUDE = '12.3456', '-56.7890'
+
+LATITUDE, LONGITUDE = "12.3456", "-56.7890"
 FORECAST = '{"type":"Feature","properties":{"timeseries":[{"time":"2026-10-09T10:00:00Z","data":{}}]}}'
 SUN = '{"properties":{"sunrise":{"time":"2026-10-09T06:00:00Z"},"sunset":{"time":"2026-10-09T18:00:00Z"}}}'
 
 
 class PrivateLocation(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='weather-privacy-')
+        self.temporary = tempfile.TemporaryDirectory(prefix="weather-privacy-")
         self.addCleanup(self.temporary.cleanup)
         self.base = Path(self.temporary.name)
-        self.bin = self.base / 'bin'
+        self.bin = self.base / "bin"
         self.bin.mkdir()
-        self.audit = self.base / 'argv'
+        self.audit = self.base / "argv"
         self.audit.touch()
-        certs = fakenet.make_certs(self.base / 'tls')
+        certs = fakenet.make_certs(self.base / "tls")
         self.replies = {}
         self.server = fakenet.Server(certs, self.replies).__enter__()
         self.addCleanup(self.server.__exit__)
-        self.env = fakenet.network_env(dict(os.environ, PATH=str(self.bin) + ':/usr/bin',
-                                            XDG_CACHE_HOME=str(self.base / 'cache'),
-                                            XDG_CONFIG_HOME=str(self.base / 'config'),
-                                            XDG_STATE_HOME=str(self.base / 'state'),
-                                            WEATHER_LOCATION_RUNTIME_DIR=str(self.base / 'runtime'),
-                                            WEATHER_GEOCLUE_COMMAND=str(self.bin / 'where-am-i'),
-                                            WEATHER_PRIVACY_AUDIT=str(self.audit)),
-                                       self.server.port, certs['ca'])
+        self.env = fakenet.network_env(
+            dict(
+                os.environ,
+                PATH=str(self.bin) + ":/usr/bin",
+                XDG_CACHE_HOME=str(self.base / "cache"),
+                XDG_CONFIG_HOME=str(self.base / "config"),
+                XDG_STATE_HOME=str(self.base / "state"),
+                WEATHER_LOCATION_RUNTIME_DIR=str(self.base / "runtime"),
+                WEATHER_GEOCLUE_COMMAND=str(self.bin / "where-am-i"),
+                WEATHER_PRIVACY_AUDIT=str(self.audit),
+            ),
+            self.server.port,
+            certs["ca"],
+        )
         # Sample a child's argv and its caller's (the helper's) before exec.
-        self.prefix = prefix = '''#!/bin/bash
+        self.prefix = prefix = """#!/bin/bash
 set -euo pipefail
 for pid in "$BASHPID" "$PPID"; do
   if [[ -r /proc/$pid/cmdline ]]; then
@@ -52,43 +60,48 @@ for pid in "$BASHPID" "$PPID"; do
     printf '%s\\0' "${argv[@]}" >>"$WEATHER_PRIVACY_AUDIT"
   fi
 done
-'''
+"""
         # The GeoClue demo is the helper's only child.
-        geoclue = self.bin / 'where-am-i'
-        geoclue.write_text(prefix + 'printf "%s\\n" "Latitude: ' + LATITUDE +
-                           '°" "Longitude: ' + LONGITUDE + '°"\n')
+        geoclue = self.bin / "where-am-i"
+        geoclue.write_text(prefix + 'printf "%s\\n" "Latitude: ' + LATITUDE + '°" "Longitude: ' + LONGITUDE + '°"\n')
         geoclue.chmod(0o755)
 
     def urls(self):
-        return '\n'.join(self.server.paths())
+        return "\n".join(self.server.paths())
 
-    def run_helper(self, subcommand, args=(), payload='', check=True):
-        return subprocess.run(fakenet.helper_command(subcommand, *args), input=payload,
-                              text=True, capture_output=True, env=self.env, timeout=15, check=check)
+    def run_helper(self, subcommand, args=(), payload="", check=True):
+        return subprocess.run(
+            fakenet.helper_command(subcommand, *args),
+            input=payload,
+            text=True,
+            capture_output=True,
+            env=self.env,
+            timeout=15,
+            check=check,
+        )
 
     def assert_private(self):
         argv = self.audit.read_bytes().decode()
-        self.assertTrue(argv, 'no process was sampled')
-        for secret in [LATITUDE, LONGITUDE, '12.35', '-56.79']:
+        self.assertTrue(argv, "no process was sampled")
+        for secret in [LATITUDE, LONGITUDE, "12.35", "-56.79"]:
             self.assertNotIn(secret, argv)
 
     def test_automatic_location_and_forecast_keep_coordinates_out_of_procfs(self):
         # The no-name response forces the coordinate-label fallback.
-        location = json.loads(self.run_helper('resolve-location', ['--force']).stdout)
+        location = json.loads(self.run_helper("resolve-location", ["--force"]).stdout)
         # Automatic positions are rounded to about 1 km before anything uses them.
-        self.assertEqual(location['latitude'], 12.35)
-        self.assertEqual(location['longitude'], -56.79)
-        self.assertEqual(location['name'], '12.35, -56.79')
-        report = json.loads(self.run_helper('fetch', ['--force'],
-                                           LATITUDE + '\n' + LONGITUDE + '\n').stdout)
-        self.assertFalse(report['stale'])
-        self.assertEqual(len(report['sun']), 3)
+        self.assertEqual(location["latitude"], 12.35)
+        self.assertEqual(location["longitude"], -56.79)
+        self.assertEqual(location["name"], "12.35, -56.79")
+        report = json.loads(self.run_helper("fetch", ["--force"], LATITUDE + "\n" + LONGITUDE + "\n").stdout)
+        self.assertFalse(report["stale"])
+        self.assertEqual(len(report["sun"]), 3)
         # MET gets three decimals (about 100 m), Nominatim the rounded position.
-        self.assertIn('lat=12.346&lon=-56.789', self.urls())
-        self.assertIn('reverse?format=jsonv2&lat=12.35&lon=-56.79&', self.urls())
-        self.assertNotIn('12.3456', self.urls())
+        self.assertIn("lat=12.346&lon=-56.789", self.urls())
+        self.assertIn("reverse?format=jsonv2&lat=12.35&lon=-56.79&", self.urls())
+        self.assertNotIn("12.3456", self.urls())
         self.assert_private()
-        for root in [self.base / 'cache/omarchy-weather', self.base / 'runtime']:
+        for root in [self.base / "cache/omarchy-weather", self.base / "runtime"]:
             self.assertEqual(stat.S_IMODE(root.stat().st_mode), 0o700)
             for file in root.iterdir():
                 self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
@@ -96,116 +109,126 @@ done
                 self.assertNotIn(LONGITUDE, file.name)
 
     def test_legacy_caches_preserve_data_and_age_without_exposing_paths(self):
-        cache = self.base / 'cache/omarchy-weather'
+        cache = self.base / "cache/omarchy-weather"
         cache.mkdir(parents=True, mode=0o700)
-        label = cache / 'location-12.35_-56.79.json'
+        label = cache / "location-12.35_-56.79.json"
         label.write_text('{"name":"Old Town"}')
-        old_forecast = cache / ('forecast-complete-' + LATITUDE + '_' + LONGITUDE + '.json')
+        old_forecast = cache / ("forecast-complete-" + LATITUDE + "_" + LONGITUDE + ".json")
         old_forecast.write_text(FORECAST)
         old_time = int(time.time()) - 3600
         os.utime(old_forecast, (old_time, old_time))
-        location = json.loads(self.run_helper('resolve-location', ['--force']).stdout)
-        self.assertEqual(location['name'], 'Old Town')
+        location = json.loads(self.run_helper("resolve-location", ["--force"]).stdout)
+        self.assertEqual(location["name"], "Old Town")
         # Failed refreshes must still use the migrated forecast as stale data.
-        self.replies.update(forecast={'status': 503}, sun={'status': 503})
-        report = json.loads(self.run_helper('fetch', ['--force'],
-                                           LATITUDE + '\n' + LONGITUDE + '\n').stdout)
-        self.assertTrue(report['stale'])
+        self.replies.update(forecast={"status": 503}, sun={"status": 503})
+        report = json.loads(self.run_helper("fetch", ["--force"], LATITUDE + "\n" + LONGITUDE + "\n").stdout)
+        self.assertTrue(report["stale"])
         # Migrated into the opaque name of the three-decimal request key.
-        key = hashlib.sha256(b'12.346_-56.789').hexdigest()
-        migrated = cache / ('forecast-complete-' + key + '.json')
+        key = hashlib.sha256(b"12.346_-56.789").hexdigest()
+        migrated = cache / ("forecast-complete-" + key + ".json")
         self.assertEqual(migrated.stat().st_mtime, old_time)
         self.assertEqual(json.loads(migrated.read_text()), json.loads(FORECAST))
         self.assert_private()
 
     def test_manual_location_uses_stdin_and_rejects_invalid_input(self):
-        location = {'name': 'Example\nTown', 'latitude': float(LATITUDE), 'longitude': float(LONGITUDE)}
-        self.run_helper('location', ['--set'], json.dumps(location))
-        file = self.base / 'state/omarchy/settings/foamy-weather-location.json'
+        location = {"name": "Example\nTown", "latitude": float(LATITUDE), "longitude": float(LONGITUDE)}
+        self.run_helper("location", ["--set"], json.dumps(location))
+        file = self.base / "state/omarchy/settings/foamy-weather-location.json"
         self.assertEqual(json.loads(file.read_text()), location)
         self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
-        for payload in ['', '{broken', '{}', json.dumps(dict(location, latitude=91)),
-                        json.dumps(location) + '\n' + json.dumps(location)]:
-            result = self.run_helper('location', ['--set'], payload, check=False)
+        for payload in [
+            "",
+            "{broken",
+            "{}",
+            json.dumps(dict(location, latitude=91)),
+            json.dumps(location) + "\n" + json.dumps(location),
+        ]:
+            result = self.run_helper("location", ["--set"], payload, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(json.loads(file.read_text()), location)
         argv = self.audit.read_bytes().decode()
         self.assertNotIn(LATITUDE, argv)
         self.assertNotIn(LONGITUDE, argv)
-        self.assertNotIn('Example', argv)
+        self.assertNotIn("Example", argv)
 
     def test_legacy_manual_location_migrates_privately(self):
-        location = {'name': 'Example Town', 'latitude': float(LATITUDE), 'longitude': float(LONGITUDE)}
-        legacy = self.base / 'config/omarchy/weather-location.local.json'
+        location = {"name": "Example Town", "latitude": float(LATITUDE), "longitude": float(LONGITUDE)}
+        legacy = self.base / "config/omarchy/weather-location.local.json"
         legacy.parent.mkdir(parents=True)
-        legacy.write_text(json.dumps(location) + '\n')
-        self.run_helper('location', ['--migrate'])
-        file = self.base / 'state/omarchy/settings/foamy-weather-location.json'
+        legacy.write_text(json.dumps(location) + "\n")
+        self.run_helper("location", ["--migrate"])
+        file = self.base / "state/omarchy/settings/foamy-weather-location.json"
         self.assertEqual(json.loads(file.read_text()), location)
         self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
         self.assertFalse(legacy.exists())
         argv = self.audit.read_bytes().decode()
         self.assertNotIn(LATITUDE, argv)
         self.assertNotIn(LONGITUDE, argv)
-        self.assertNotIn('Example', argv)
+        self.assertNotIn("Example", argv)
 
     def test_invalid_forecast_coordinates_do_not_start_a_download(self):
-        for payload in ['', '12.3456\n', '91\n0\n', '12;echo exposed\n34\n']:
-            report = json.loads(self.run_helper('fetch', payload=payload).stdout)
-            self.assertIn('error', report)
+        for payload in ["", "12.3456\n", "91\n0\n", "12;echo exposed\n34\n"]:
+            report = json.loads(self.run_helper("fetch", payload=payload).stdout)
+            self.assertIn("error", report)
             self.assertEqual(self.server.paths(), [])
 
     def test_place_search_reads_the_query_from_stdin(self):
-        request = json.dumps({'query': 'Bø i Telemark', 'language': 'no'})
-        result = self.run_helper('geocode', payload=request)
+        request = json.dumps({"query": "Bø i Telemark", "language": "no"})
+        result = self.run_helper("geocode", payload=request)
         self.assertEqual(json.loads(result.stdout), json.loads(fakenet.SEARCH))
         host, path, headers = self.server.log[-1]
-        self.assertEqual(host, 'geocoding-api.open-meteo.com')
-        self.assertEqual(path, '/v1/search?name=B%C3%B8%20i%20Telemark&count=5&language=no&format=json')
-        self.assertEqual(headers['User-Agent'], 'foamy-weather (+https://github.com/foamrider/foamy-weather)')
+        self.assertEqual(host, "geocoding-api.open-meteo.com")
+        self.assertEqual(path, "/v1/search?name=B%C3%B8%20i%20Telemark&count=5&language=no&format=json")
+        self.assertEqual(headers["User-Agent"], "foamy-weather (+https://github.com/foamrider/foamy-weather)")
         # An unknown language reads as English; the query never reaches argv.
-        self.run_helper('geocode', payload=json.dumps({'query': 'Oslo', 'language': 'xx-YY'}))
-        self.assertIn('language=en&', self.server.log[-1][1])
-        for reply in [{'status': 503}, {'body': 'x' * (256 * 1024 + 1)}]:
-            self.replies['search'] = reply
-            result = self.run_helper('geocode', payload=request)
-            self.assertEqual((result.returncode, json.loads(result.stdout)),
-                             (0, {'error': 'Could not search for a location'}))
+        self.run_helper("geocode", payload=json.dumps({"query": "Oslo", "language": "xx-YY"}))
+        self.assertIn("language=en&", self.server.log[-1][1])
+        for reply in [{"status": 503}, {"body": "x" * (256 * 1024 + 1)}]:
+            self.replies["search"] = reply
+            result = self.run_helper("geocode", payload=request)
+            self.assertEqual(
+                (result.returncode, json.loads(result.stdout)), (0, {"error": "Could not search for a location"})
+            )
         requests = len(self.server.log)
-        for payload in ['', 'Oslo', '{"query":""}', '{"query":5}']:
-            result = self.run_helper('geocode', payload=payload)
-            self.assertEqual(json.loads(result.stdout), {'error': 'Could not search for a location'})
-        self.assertEqual(len(self.server.log), requests, 'an invalid query must not start a request')
-        self.assertEqual(self.run_helper('geocode', ['extra'], check=False).returncode, 2)
+        for payload in ["", "Oslo", '{"query":""}', '{"query":5}']:
+            result = self.run_helper("geocode", payload=payload)
+            self.assertEqual(json.loads(result.stdout), {"error": "Could not search for a location"})
+        self.assertEqual(len(self.server.log), requests, "an invalid query must not start a request")
+        self.assertEqual(self.run_helper("geocode", ["extra"], check=False).returncode, 2)
 
     def test_quickshell_sends_fresh_stdin_on_repeated_fetch_and_location_save(self):
-        service = (ROOT / 'WeatherService.qml').read_text()
-        panel = (ROOT / 'Panel.qml').read_text()
+        service = (ROOT / "WeatherService.qml").read_text()
+        panel = (ROOT / "Panel.qml").read_text()
 
         def block(marker, start=0, qml=service):
             begin = qml.index(marker, start)
-            end = qml.index('{', begin) + 1
+            end = qml.index("{", begin) + 1
             depth = 1
             while depth:
-                depth += (qml[end] == '{') - (qml[end] == '}')
+                depth += (qml[end] == "{") - (qml[end] == "}")
                 end += 1
             return qml[begin:end]
 
         # Use the production launch functions and write handlers, with real helpers.
-        weather_started = block('onStarted:', service.index('weatherProc: Process {'))
-        save_started = block('onStarted:', panel.index('id: locationSaveProc'), panel)
+        weather_started = block("onStarted:", service.index("weatherProc: Process {"))
+        save_started = block("onStarted:", panel.index("id: locationSaveProc"), panel)
         # FoamyNative.command starts `bash -c 'exec …'` from PATH: sample the
         # argv QML built.
-        bash = self.bin / 'bash'
+        bash = self.bin / "bash"
         bash.write_text(self.prefix + 'exec /usr/bin/bash "$@"\n')
         bash.chmod(0o755)
-        app = self.base / 'app'
+        app = self.base / "app"
         app.mkdir()
-        (app / 'shell.qml').write_text('''import QtQuick
+        (app / "shell.qml").write_text(
+            """import QtQuick
 import Quickshell
 import Quickshell.Io
-import ''' + json.dumps('file://' + str(ROOT / 'kit/FoamyNative.js')) + ''' as FoamyNative
-import ''' + json.dumps('file://' + str(ROOT / 'Model.js')) + ''' as Model
+import """
+            + json.dumps("file://" + str(ROOT / "kit/FoamyNative.js"))
+            + """ as FoamyNative
+import """
+            + json.dumps("file://" + str(ROOT / "Model.js"))
+            + """ as Model
 ShellRoot {
   id: root
   property bool networkReady: true
@@ -227,21 +250,32 @@ ShellRoot {
   property int step: 0
   property bool helperUnavailable: false
   // The production launch: bin/$HOSTTYPE/foamy-weather-helper under this directory.
-  property string pluginDir: ''' + json.dumps(str(ROOT)) + '\n' +
-            block('function setError(') + '\n' + block('function refresh(') + '\n' + block('function pickSuggestion(', 0, panel) + '''
+  property string pluginDir: """
+            + json.dumps(str(ROOT))
+            + "\n"
+            + block("function setError(")
+            + "\n"
+            + block("function refresh(")
+            + "\n"
+            + block("function pickSuggestion(", 0, panel)
+            + """
   Process {
     id: weatherProc
     property string requestInput: ""
     property int generation: 0
     property string query: ""
     property string locationName: ""
-    ''' + weather_started + '''
+    """
+            + weather_started
+            + """
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.report = JSON.parse(text) }
   }
   Process {
     id: locationSaveProc
     property string requestInput: ""
-    ''' + save_started + '''
+    """
+            + save_started
+            + """
     onExited: function(code) { if (code !== 0) throw new Error("save failed"); root.saved = true }
   }
   Timer {
@@ -261,24 +295,36 @@ ShellRoot {
   }
   Timer { interval: 10000; running: true; onTriggered: { console.log("PRIVATE PIPE TIMEOUT"); Qt.quit() } }
 }
-''')
-        runtime = self.base / 'qt-runtime'
+"""
+        )
+        runtime = self.base / "qt-runtime"
         runtime.mkdir(mode=0o700)
-        env = dict(self.env, XDG_RUNTIME_DIR=str(runtime), QT_QPA_PLATFORM='offscreen',
-                   QT_QUICK_BACKEND='software', QT_QPA_PLATFORMTHEME='')
-        for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'HYPRLAND_INSTANCE_SIGNATURE']:
+        env = dict(
+            self.env,
+            XDG_RUNTIME_DIR=str(runtime),
+            QT_QPA_PLATFORM="offscreen",
+            QT_QUICK_BACKEND="software",
+            QT_QPA_PLATFORMTHEME="",
+        )
+        for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
             env.pop(key, None)
-        result = subprocess.run(['dbus-run-session', '--', '/usr/bin/qs', '-p', str(app), '--no-color'],
-                                env=env, text=True, capture_output=True, timeout=15, check=True)
-        self.assertIn('PRIVATE PIPE PASS', result.stdout + result.stderr)
-        self.assertIn('lat=8.765&lon=9.87', self.urls())
-        saved = json.loads((self.base / 'state/omarchy/settings/foamy-weather-location.json').read_text())
-        self.assertEqual(saved, {'name': 'Pipe Town', 'latitude': 8.7654, 'longitude': 9.8765})
+        result = subprocess.run(
+            ["dbus-run-session", "--", "/usr/bin/qs", "-p", str(app), "--no-color"],
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=15,
+            check=True,
+        )
+        self.assertIn("PRIVATE PIPE PASS", result.stdout + result.stderr)
+        self.assertIn("lat=8.765&lon=9.87", self.urls())
+        saved = json.loads((self.base / "state/omarchy/settings/foamy-weather-location.json").read_text())
+        self.assertEqual(saved, {"name": "Pipe Town", "latitude": 8.7654, "longitude": 9.8765})
         self.assert_private()
         argv = self.audit.read_text()
-        self.assertNotIn('8.7654', argv)
-        self.assertNotIn('9.8765', argv)
+        self.assertNotIn("8.7654", argv)
+        self.assertNotIn("9.8765", argv)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

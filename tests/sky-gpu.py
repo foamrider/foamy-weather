@@ -13,6 +13,7 @@ frame was lost the same way.
 "Cloud structure" is the high-pass texture of the band (pixels minus a 9 px
 box blur): about 1.7 with the noise, about 0.7 (dither only) without.
 """
+
 import glob
 import os
 import sys
@@ -26,7 +27,7 @@ os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
 import harness  # noqa: E402
 
-SHELL = r'''
+SHELL = r"""
 import QtQuick
 import Quickshell
 ShellRoot {
@@ -58,12 +59,13 @@ ShellRoot {
     }
   }
 }
-'''
+"""
 
 
 def texture(path):
     from PIL import Image, ImageFilter
     import numpy as np
+
     image = Image.open(path).convert("L")
     a = np.asarray(image, dtype=float)
     b = np.asarray(image.filter(ImageFilter.BoxBlur(9)), dtype=float)
@@ -90,8 +92,15 @@ def main():
         run.root.joinpath("shell.qml").write_text(SHELL.replace("%OUT%", str(shots)).replace("%ANIMATE%", animate))
         kms = run.base / "kms.json"
         kms.write_text('{ "device": "%s", "headless": "1920x1080", "hwcursor": false }' % nodes[0])
-        run.env.update({"QT_QPA_PLATFORM": "eglfs", "QT_QPA_EGLFS_INTEGRATION": "eglfs_kms", "QT_QPA_EGLFS_KMS_CONFIG": str(kms),
-                        "QT_QPA_EGLFS_PHYSICAL_WIDTH": "508", "QT_QPA_EGLFS_PHYSICAL_HEIGHT": "286"})
+        run.env.update(
+            {
+                "QT_QPA_PLATFORM": "eglfs",
+                "QT_QPA_EGLFS_INTEGRATION": "eglfs_kms",
+                "QT_QPA_EGLFS_KMS_CONFIG": str(kms),
+                "QT_QPA_EGLFS_PHYSICAL_WIDTH": "508",
+                "QT_QPA_EGLFS_PHYSICAL_HEIGHT": "286",
+            }
+        )
         run.env.pop("QT_QUICK_BACKEND", None)
         run.run(timeout=60)
         mode = "animated" if animate == "true" else "still (reduced motion)"

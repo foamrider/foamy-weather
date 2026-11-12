@@ -11,6 +11,7 @@ its argv (read from /proc while the search runs).
 Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit) and openssl.
 Temporary HOME/XDG dirs; nothing is sent to the real services.
 """
+
 import json
 import os
 import sys
@@ -31,7 +32,7 @@ import harness  # noqa: E402
 # stand-in), not on this.
 SEARCH_DELAY = 1.5
 
-SHELL = r'''
+SHELL = r"""
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -118,7 +119,7 @@ ShellRoot {
     }
   }
 }
-'''
+"""
 
 
 # The argv of every foamy-weather-helper (and wrapper) seen during a search.
@@ -149,9 +150,9 @@ def slow_search(handler):
     body = fakenet.SEARCH.encode()
     try:
         handler.send_response(200)
-        handler.send_header('Content-Type', 'application/json')
-        handler.send_header('Content-Length', str(len(body)))
-        handler.send_header('Connection', 'close')
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.send_header("Connection", "close")
         handler.end_headers()
         handler.wfile.write(body)
     except OSError:
@@ -165,11 +166,11 @@ def main():
         certs = fakenet.make_certs(certs_dir)
         ARRIVED = Path(certs_dir) / "arrived"
         shell = SHELL.replace("ARRIVED", json.dumps(str(ARRIVED)))
-        with fakenet.Server(certs, {'search': slow_search}) as server:
+        with fakenet.Server(certs, {"search": slow_search}) as server:
             run = harness.Run("4.5", shell, plugin=ROOT, prefix="foamy-weather-search-")
-            run.env = fakenet.network_env(run.env, server.port, certs['ca'])
+            run.env = fakenet.network_env(run.env, server.port, certs["ca"])
             run.run(timeout=60)
-            searches = server.paths('search')
+            searches = server.paths("search")
     checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
     if run.ok and len(searches) != 3:
         run.ok = False
