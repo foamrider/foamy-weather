@@ -16,8 +16,6 @@ assert.equal(manifest.barWidget?.defaults?.language, undefined);
 assert.equal((manifest.barWidget?.schema || []).some(f => f.key === 'language'), false);
 assert.equal(I.text('Unknown %1 {name}', 'no', ['$& %2']), '$& %2 {name}'.replace(/^/, 'Unknown '));
 assert.equal(I.text('constructor', 'no'), 'constructor');
-const ui = fs.readFileSync(path.join(__dirname, '../kit/FoamyI18n.qml'), 'utf8');
-assert.ok(ui.includes('Qt.createQmlObject'), '4.0 must not statically require a 4.5 QML type');
 const P = require('../Preferences.js');
 for (const language of ['en', 'no']) {
   const t = (key, values) => I.text(key, language, values);

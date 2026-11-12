@@ -267,7 +267,7 @@ python3 -m unittest tests.test_clipboard tests.test_location_privacy
 bash tests/test-weather-location.sh
 FOAMY_HELPER="[\"$PWD/bin/aarch64/foamy-weather-helper\"]" node tests/weather-fetch.test.js   # and the two above
 bash tests/kit-check.sh
-python3 tests/i18n-runtime.py                  # live language switching (OMARCHY_PATH picks another tree)
+python3 "$FOAMY_KIT/preview/i18n_runtime.py" .  # live language switching (foamy-kit's shared check)
 python3 tests/runtime.py                       # needs foamy-kit (FOAMY_KIT)
 python3 tests/search-runtime.py                # the location search; needs foamy-kit
 python3 tests/sky-gpu.py                       # the sky on a GPU (eglfs on a render node); skips without one
