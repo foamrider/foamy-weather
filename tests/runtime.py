@@ -8,15 +8,19 @@ host is the installed 4.5 shell (FOAMY_HOST_45 picks another 4.5 tree).
 
   python3 tests/runtime.py
 
-Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit). Temporary
-HOME/XDG dirs; automatic location is off and the network is down
-(`testNetworkConnected`), so only the location helper runs (to migrate) and no
-network request starts.
+Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit), dbus-daemon,
+dbus-python and PyGObject. Temporary HOME/XDG dirs; automatic location is off
+and the network is down (the kit's fake NetworkManager, preview/fake_nm.py,
+reports no connectivity), so only the location helper runs (to migrate) and
+no network request starts. The helper is still pointed at the loopback
+stand-in (tests/fakenet.py, also needs openssl), which must see no request:
+a service that fetched anyway fails the test instead of reaching MET Norway.
 """
 
 import argparse
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +29,9 @@ KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"
 # harness reads it.
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
+sys.path.insert(0, str(ROOT / "tests"))
+import fake_nm  # noqa: E402
+import fakenet  # noqa: E402
 import harness  # noqa: E402
 
 SHELL = r"""
@@ -56,9 +63,8 @@ ShellRoot {
   FoamyWait { id: wait }
 
   Component.onCompleted: {
-    // Offline (the harness has no system bus, so no NetworkManager): nothing
-    // is fetched. tests/fetch-runtime.py covers the fetch.
-    Weather.WeatherService.testNetworkConnected = false
+    // Offline (the fake NetworkManager, main() below): nothing is fetched.
+    // tests/fetch-runtime.py covers the fetch.
     var component = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
     if (component.status !== Component.Ready) { console.log("FOAMY FAIL load " + component.errorString()); Qt.quit(); return }
     // Out-of-range or mistyped stored values read as their defaults; the agent is trimmed.
@@ -280,7 +286,9 @@ ShellRoot {
 def main():
     argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args()
     host = "4.5"
-    run = harness.Run(host, SHELL, plugin=ROOT, prefix="foamy-weather-runtime-")
+    run = harness.Run(host, SHELL, plugin=ROOT, prefix="foamy-weather-runtime-", system_bus="private")
+    connectivity = run.base / "connectivity"
+    fake_nm.set_connectivity(connectivity, fake_nm.NONE)
     home = run.base / "home"
     legacy = home / ".config/omarchy/weather-location.local.json"
     legacy.parent.mkdir(parents=True, exist_ok=True)
@@ -288,7 +296,19 @@ def main():
     (home / ".config/omarchy/shell.json").write_text(
         '{"version":1,"plugins":[{"id":"foamy.weather","units":"imperial","language":"nb"}]}\n'
     )
-    run.run(timeout=60)
+    with tempfile.TemporaryDirectory(prefix="foamy-weather-runtime-") as scratch:
+        certs = fakenet.make_certs(Path(scratch) / "tls")
+        with fakenet.Server(certs) as server:
+            run.env = fakenet.network_env(run.env, server.port, certs["ca"])
+            # The fake goes on the bus before qs: Quickshell looks for
+            # NetworkManager only once, at start.
+            run.start_buses()
+            with fake_nm.start(run.system_bus_address, connectivity):
+                run.run(timeout=60)
+            requests = server.paths()
+    if requests:
+        run.ok = False
+        print(f"{host}: requests went out while offline: {requests}")
     checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
     state = home / ".local/state/omarchy/settings/foamy-weather-location.json"
     if legacy.exists() or not state.exists() or (state.stat().st_mode & 0o777) != 0o600:

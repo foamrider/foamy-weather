@@ -1,9 +1,11 @@
 """The forecast fetch in the real WeatherService, offscreen on Omarchy 4.5
 (foamy-kit harness), with the real helper against the loopback stand-in for
-MET Norway (tests/fakenet.py). The network comes up through the service's
-test-only `testNetworkConnected` (the harness has no system bus):
+MET Norway (tests/fakenet.py). The network goes down and up through the
+kit's fake NetworkManager (preview/fake_nm.py) on the run's private system
+bus, which Quickshell's Networking reads:
 
-- offline, nothing is fetched; online, the place's forecast arrives;
+- offline, nothing is fetched; when the network comes back, the place's
+  forecast arrives;
 - a new place keeps the previous report on screen while it loads;
 - a place change during a running fetch stops that fetch, never applies its
   result or its end (no error, no retry), and fetches the new place instead;
@@ -11,7 +13,8 @@ test-only `testNetworkConnected` (the harness has no system bus):
 
   python3 tests/fetch-runtime.py
 
-Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit) and openssl.
+Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit), openssl,
+dbus-daemon, dbus-python and PyGObject.
 Temporary HOME/XDG dirs; nothing is sent to the real services.
 """
 
@@ -27,6 +30,7 @@ KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
 sys.path.insert(0, str(ROOT / "tests"))
+import fake_nm  # noqa: E402
 import fakenet  # noqa: E402
 import harness  # noqa: E402
 
@@ -39,11 +43,15 @@ PLACES = {
 # Place B's forecast answers after this delay, so its fetch is still running
 # when the place changes again. The QML steps wait on conditions, not on it.
 SLOW_DELAY = 4.0
+# The shell logs this once it has checked the offline state; main() then
+# brings the network up.
+OFFLINE_CHECKED = "FOAMY OFFLINE CHECKED"
 
 SHELL = r"""
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Networking
 import "harness"
 import "plugin" as Weather
 
@@ -54,6 +62,8 @@ ShellRoot {
   // The query of every report the service took, and every error it showed.
   property var reports: []
   property var errors: []
+  // How many times the forecast helper started.
+  property int fetches: 0
   readonly property var s: Weather.WeatherService
   function check(ok, what) { if (!ok) { failures++; console.log("FOAMY FAIL " + what) } else console.log("FOAMY OK " + what) }
   function finish() {
@@ -78,9 +88,13 @@ ShellRoot {
       if (shell.s.errorMessage) shell.errors = shell.errors.concat([shell.s.errorMessage])
     }
   }
+  Connections {
+    target: Weather.WeatherService.weatherProc
+    function onRunningChanged() { if (shell.s.weatherProc.running) shell.fetches++ }
+  }
 
   Component.onCompleted: {
-    s.testNetworkConnected = false
+    // The fake NetworkManager starts offline (main() below).
     s.networkSettleTimer.interval = 50
     var component = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
     if (component.status !== Component.Ready) { check(false, "load " + component.errorString()); finish(); return }
@@ -92,9 +106,17 @@ ShellRoot {
 
   function offline(ok) {
     if (!ok) return finish()
-    check(!s.networkReady && !s.weatherProc.running && s.report === null, "offline: nothing is fetched")
-    s.testNetworkConnected = true
-    wait.waitFor(function() { return s.reportCurrent && !s.loading }, 30000, firstReport, "place A's forecast arrives")
+    // Offline for longer than the (shortened) settle time: a fetch would
+    // have started by now.
+    wait.after(1000, function() {
+      check(Networking.connectivity === NetworkConnectivity.None, "the fake NetworkManager reports offline: "
+        + Networking.connectivity)
+      check(!s.networkReady && shell.fetches === 0 && s.report === null, "offline: nothing is fetched: "
+        + shell.fetches + " fetches")
+      console.log("FOAMY OFFLINE CHECKED")
+      wait.waitFor(function() { return s.reportCurrent && !s.loading }, 30000, firstReport,
+        "the network comes back: place A's forecast arrives")
+    })
   }
 
   function firstReport(ok) {
@@ -174,15 +196,29 @@ def main():
         certs = fakenet.make_certs(Path(scratch) / "tls")
         shell = SHELL.replace("PLACES", json.dumps(PLACES)).replace("ARRIVED", json.dumps(str(arrived)))
         with fakenet.Server(certs, {"forecast": forecast}) as server:
-            run = harness.Run("4.5", shell, plugin=ROOT, prefix="foamy-weather-fetch-")
+            run = harness.Run("4.5", shell, plugin=ROOT, prefix="foamy-weather-fetch-", system_bus="private")
+            connectivity = run.base / "connectivity"
+            fake_nm.set_connectivity(connectivity, fake_nm.NONE)
             state = run.base / "home/.local/state/omarchy/settings/foamy-weather-location.json"
             state.parent.mkdir(parents=True, exist_ok=True)
             name, latitude, longitude = PLACES["A"]
             state.write_text(json.dumps({"name": name, "latitude": latitude, "longitude": longitude}) + "\n")
             state.chmod(0o600)
             run.env = fakenet.network_env(run.env, server.port, certs["ca"])
-            run.run(timeout=90)
+            # The fake goes on the bus before qs: Quickshell looks for
+            # NetworkManager only once, at start.
+            run.start_buses()
+            with fake_nm.start(run.system_bus_address, connectivity):
+                run.start()
+                try:
+                    if run.wait_for_log(OFFLINE_CHECKED, timeout=60):
+                        fake_nm.set_connectivity(connectivity, fake_nm.FULL)
+                    run.wait(90)
+                finally:
+                    run.stop()
             forecasts = server.paths("forecast")
+    # As harness.Run.run() decides it.
+    run.ok = "FOAMY DONE" in run.log and not run.failures()
     problems = []
     wanted = ["lat=61.123&lon=7.456", "lat=62.500&lon=8.250", "lat=63.750&lon=9.125"]
     if [next((w for w in wanted if w in path), path) for path in forecasts] != wanted:

@@ -284,7 +284,11 @@ python3 tests/sky-gpu.py                       # the sky on a GPU (eglfs on a re
 ```
 
 The offscreen tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
-(`FOAMY_HOST_45` picks another 4.5 tree).
+(`FOAMY_HOST_45` picks another 4.5 tree). runtime.py, search-runtime.py and
+fetch-runtime.py set the network state through foamy-kit's fake
+NetworkManager (`preview/fake_nm.py`, on the run's private system bus; it
+needs dbus-python and PyGObject): offline, and for fetch-runtime.py online
+again.
 
 `preview/Preview.qml` renders mock states with the foamy-kit preview harness
 (`FOAMY_HOST_45=/usr/share/omarchy/shell <foamy-kit>/preview/render.py . --host 4.5`).

@@ -90,12 +90,9 @@ QtObject {
   readonly property string coordinateQuery: hasCoordinates ? String(configuredLocationState.latitude) + "," + String(configuredLocationState.longitude) : ""
 
   // --- network -------------------------------------------------------------------
-  // Test-only: runtime tests set true or false to stand in for NetworkManager
-  // (the test harness has no system bus); null, always in the shell, follows it.
-  property var testNetworkConnected: null
   // WARP can leave NetworkManager's external probe at Limited while routed
   // internet access is working, so only block truly offline/portal states.
-  readonly property bool networkConnected: testNetworkConnected !== null ? testNetworkConnected === true : (Networking.connectivity === NetworkConnectivity.Full || Networking.connectivity === NetworkConnectivity.Limited)
+  readonly property bool networkConnected: Networking.connectivity === NetworkConnectivity.Full || Networking.connectivity === NetworkConnectivity.Limited
   property bool networkSettled: false
   readonly property bool networkReady: active && networkConnected && networkSettled
   onNetworkConnectedChanged: networkSettled = false

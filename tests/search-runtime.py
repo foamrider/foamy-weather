@@ -8,7 +8,8 @@ its argv (read from /proc while the search runs).
 
   python3 tests/search-runtime.py
 
-Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit) and openssl.
+Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit), openssl,
+dbus-daemon, dbus-python and PyGObject.
 Temporary HOME/XDG dirs; nothing is sent to the real services.
 """
 
@@ -24,6 +25,7 @@ KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"
 os.environ.setdefault("FOAMY_HOST_45", "/usr/share/omarchy/shell")
 sys.path.insert(0, str(KIT / "preview"))
 sys.path.insert(0, str(ROOT / "tests"))
+import fake_nm  # noqa: E402
 import fakenet  # noqa: E402
 import harness  # noqa: E402
 
@@ -60,9 +62,8 @@ ShellRoot {
   function arrivals() { arrived.reload(); return arrived.text().split("\n").length - 1 }
 
   Component.onCompleted: {
-    // Offline, so no forecast is fetched; the search does not wait for the
-    // network.
-    Weather.WeatherService.testNetworkConnected = false
+    // Offline (the kit's fake NetworkManager, main() below), so no forecast
+    // is fetched; the search does not wait for the network.
     var component = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
     if (component.status !== Component.Ready) { console.log("FOAMY FAIL load " + component.errorString()); Qt.quit(); return }
     widget = component.createObject(holder, { bar: bar, moduleName: "foamy.weather", settings: { id: "foamy.weather" } })
@@ -167,9 +168,15 @@ def main():
         ARRIVED = Path(certs_dir) / "arrived"
         shell = SHELL.replace("ARRIVED", json.dumps(str(ARRIVED)))
         with fakenet.Server(certs, {"search": slow_search}) as server:
-            run = harness.Run("4.5", shell, plugin=ROOT, prefix="foamy-weather-search-")
+            run = harness.Run("4.5", shell, plugin=ROOT, prefix="foamy-weather-search-", system_bus="private")
+            connectivity = run.base / "connectivity"
+            fake_nm.set_connectivity(connectivity, fake_nm.NONE)
             run.env = fakenet.network_env(run.env, server.port, certs["ca"])
-            run.run(timeout=60)
+            # The fake goes on the bus before qs: Quickshell looks for
+            # NetworkManager only once, at start.
+            run.start_buses()
+            with fake_nm.start(run.system_bus_address, connectivity):
+                run.run(timeout=60)
             searches = server.paths("search")
     checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
     if run.ok and len(searches) != 3:
