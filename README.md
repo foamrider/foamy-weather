@@ -263,6 +263,13 @@ helper's test-only `FOAMY_WEATHER_TEST_CONNECT` and `SSL_CERT_FILE`). Nothing
 is sent to the real services, and all files go to temporary HOME/XDG
 directories.
 
+`tests/validate.sh` runs everything: foamy-kit's checks, the linters and
+formatters (pinned in `mise.toml`; run `mise install` first; findings that
+existed at adoption are in `tests/lint/*-baseline.txt`), the helper's Rust
+tests, and then `tests/suite.sh`, which runs the tests below. `--ci` is what
+CI runs (no Quickshell, no Omarchy host); `--fast` skips the Rust tests and
+the offscreen runtime tests. One by one:
+
 ```sh
 for t in tests/*.test.js tests/i18n.test.cjs; do node "$t"; done   # service.test.js: current() and the entry
 python3 -m unittest tests.test_clipboard tests.test_location_privacy
