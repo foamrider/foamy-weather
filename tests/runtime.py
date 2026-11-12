@@ -9,8 +9,9 @@ host is the installed 4.5 shell (FOAMY_HOST_45 picks another 4.5 tree).
   python3 tests/runtime.py
 
 Needs foamy-kit (FOAMY_KIT, default ~/GitHub/Personal/foamy-kit). Temporary
-HOME/XDG dirs; automatic location is off and the network never settles, so
-only the location script runs (to migrate) and no network request starts.
+HOME/XDG dirs; automatic location is off and the network is down
+(`testNetworkConnected`), so only the location helper runs (to migrate) and no
+network request starts.
 """
 import argparse
 import os
@@ -53,9 +54,9 @@ ShellRoot {
   Item { id: holder }
 
   Component.onCompleted: {
-    // NetworkManager is the host's (the system bus): keep the network
-    // "settling" so nothing is fetched from MET Norway for real.
-    Weather.WeatherService.networkSettleTimer.interval = 24 * 60 * 60 * 1000
+    // Offline (the harness has no system bus, so no NetworkManager): nothing
+    // is fetched. tests/fetch-runtime.py covers the fetch.
+    Weather.WeatherService.testNetworkConnected = false
     var component = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
     if (component.status !== Component.Ready) { console.log("FOAMY FAIL load " + component.errorString()); Qt.quit(); return }
     // Out-of-range or mistyped stored values read as their defaults; the agent is trimmed.
@@ -105,7 +106,7 @@ ShellRoot {
           && Weather.WeatherService.localLocationState.latitude === 69.65, "legacy searched location migrated and read: "
           + JSON.stringify(Weather.WeatherService.localLocationState))
         shell.check(!a.popup.bodyItem && !b.popup.bodyItem, "popup bodies are lazy")
-        shell.check(!Weather.WeatherService.weatherProc.running && !Weather.WeatherService.locationProc.running, "no fetch before the network settles")
+        shell.check(!Weather.WeatherService.weatherProc.running && !Weather.WeatherService.locationProc.running, "no fetch while offline")
         // A report for the configured coordinates, shared by every instance.
         Weather.WeatherService.localLocationState = { name: "Bergen", latitude: 60.39, longitude: 5.32 }
         var report = JSON.parse(JSON.stringify(shell.sample))
@@ -217,8 +218,7 @@ ShellRoot {
         break
       case 8:
         var warm = shell.current()
-        // Offline without NetworkManager's connection; else still settling.
-        shell.check(warm && warm.ok === false && warm.reason === (Weather.WeatherService.networkConnected ? "pending" : "offline"),
+        shell.check(warm && warm.ok === false && warm.reason === "offline",
           "no report for the place yet: " + JSON.stringify(warm))
         var report = JSON.parse(JSON.stringify(shell.sample))
         report.query = Weather.WeatherService.coordinateQuery

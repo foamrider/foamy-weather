@@ -109,19 +109,10 @@ test("helper errors keep their key and values for translation", () => {
   assert.deepEqual(Array.from(c.errorValues), ["--bogus"]);
 });
 
-test("a coordinate change keeps the report and restarts a running fetch", () => {
-  const service = sources.service;
-  const handler = service.slice(service.indexOf("onCoordinateQueryChanged:"), service.indexOf("onAutomaticLocationChanged:"));
-  assert.doesNotMatch(handler, /report\s*=\s*null/, "the previous report must stay visible");
-  assert.match(handler, /weatherGeneration\+\+/);
-  assert.match(handler, /weatherRestart = true/);
-});
-
-test("the geocoder query goes to the helper on stdin, not argv", () => {
-  const panel = sources.panel;
-  const proc = panel.slice(panel.indexOf("id: geocodeProc"), panel.indexOf("onStarted", panel.indexOf("id: geocodeProc")));
-  assert.match(proc, /FoamyNative\.command\(root\.pluginDir, Model\.HELPER, \["geocode"\]\)/);
-  assert.doesNotMatch(proc, /geocoding-api|query/);
+// A coordinate change during a running fetch: tests/fetch-runtime.py. The
+// helper's argv (no query, no coordinates): fetch-runtime.py and
+// search-runtime.py, from /proc while the helper runs.
+test("the geocoder query goes to the helper on stdin", () => {
   const c = controller({ editingLocation:true, automaticLocation:false, geocodePendingQuery:"Bø i Telemark",
     geocodeActiveQuery:"", geocodeGeneration:3, geocodeProc:{running:false}, geocodeLanguage:()=>"no" }, ["startGeocode"], "panel");
   c.startGeocode();

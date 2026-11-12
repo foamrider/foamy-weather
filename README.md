@@ -272,6 +272,7 @@ bash tests/kit-check.sh
 python3 "$FOAMY_KIT/preview/i18n_runtime.py" .  # live language switching (foamy-kit's shared check)
 python3 tests/runtime.py                       # needs foamy-kit (FOAMY_KIT)
 python3 tests/search-runtime.py                # the location search; needs foamy-kit
+python3 tests/fetch-runtime.py                 # the forecast fetch across place changes; needs foamy-kit
 python3 tests/sky-gpu.py                       # the sky on a GPU (eglfs on a render node); skips without one
 ```
 

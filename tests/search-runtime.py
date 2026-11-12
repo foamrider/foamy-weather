@@ -3,7 +3,8 @@ harness), with the real helper against the loopback stand-in for Open-Meteo
 (tests/fakenet.py): a search cancelled by further typing must not report its
 own end (killed, no output) as a failed search, also when the new text trims
 to the same query (a trailing space), and the search that replaces it shows
-its results without an error.
+its results without an error. The query reaches the helper on stdin, never in
+its argv (read from /proc while the search runs).
 
   python3 tests/search-runtime.py
 
@@ -52,9 +53,9 @@ ShellRoot {
   Item { id: holder }
 
   Component.onCompleted: {
-    // NetworkManager is the host's: keep the network "settling" so no
-    // forecast is fetched. The search does not wait for it.
-    Weather.WeatherService.networkSettleTimer.interval = 24 * 60 * 60 * 1000
+    // Offline, so no forecast is fetched; the search does not wait for the
+    // network.
+    Weather.WeatherService.testNetworkConnected = false
     var component = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
     if (component.status !== Component.Ready) { console.log("FOAMY FAIL load " + component.errorString()); Qt.quit(); return }
     widget = component.createObject(holder, { bar: bar, moduleName: "foamy.weather", settings: { id: "foamy.weather" } })
@@ -113,7 +114,27 @@ ShellRoot {
 '''
 
 
+# The argv of every foamy-weather-helper (and wrapper) seen during a search.
+ARGVS = []
+
+
+def helper_argvs():
+    found = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            argv = (entry / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        text = [part.decode(errors="replace") for part in argv if part]
+        if any("foamy-weather-helper" in part for part in text):
+            found.append(text)
+    return found
+
+
 def slow_search(handler):
+    ARGVS.extend(helper_argvs())
     time.sleep(SEARCH_DELAY)
     body = fakenet.SEARCH.encode()
     try:
@@ -140,6 +161,12 @@ def main():
     if run.ok and len(searches) < 2:
         run.ok = False
         print(f"4.5: expected at least two searches at the stand-in, saw {len(searches)}")
+    if run.ok and not any("geocode" in argv for argv in ARGVS):
+        run.ok = False
+        print(f"4.5: the search helper was not seen while it ran: {ARGVS}")
+    if run.ok and any("Oslo" in part or "Bergen" in part for argv in ARGVS for part in argv):
+        run.ok = False
+        print(f"4.5: the query reached the helper's argv: {ARGVS}")
     if run.ok:
         print(f"4.5: {len(checks)} search checks passed")
         run.cleanup()
