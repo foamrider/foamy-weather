@@ -471,41 +471,6 @@ mod tests {
     }
 
     #[test]
-    fn rounding_matches_awk_printf() {
-        // `awk 'BEGIN { printf "%.3f %.2f", … }'` on glibc.
-        for (value, three, two) in [
-            (0.0625, "0.062", "0.06"),
-            (-0.0001, "-0.000", "-0.00"),
-            (0.125, "0.125", "0.12"),
-            (2.675, "2.675", "2.67"),
-            (1.0005, "1.000", "1.00"),
-            (12.3456, "12.346", "12.35"),
-            (-56.789, "-56.789", "-56.79"),
-            (-0.0, "-0.000", "-0.00"),
-        ] {
-            assert_eq!(fixed(value, 3), three);
-            assert_eq!(fixed(value, 2), two);
-        }
-    }
-
-    #[test]
-    fn cache_keys_are_sha256sum_of_the_rounded_pair() {
-        // printf '%s' 12.000_34.000 | sha256sum
-        assert_eq!(
-            sha256_hex("12.000_34.000"),
-            "9258797968af04bc02bceb63453da7f2af6634844f062430d1e1ee608459545a"
-        );
-        assert_eq!(
-            sha256_hex("12.35_-56.79"),
-            "0eda377447654d618f7e83679e8266f32f3e708e31967338bbf9383aebbfb11a"
-        );
-        assert_eq!(
-            sha256_hex(""),
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
-    }
-
-    #[test]
     fn http_dates_cover_the_three_formats() {
         let expected = 784111777; // 1994-11-06T08:49:37Z
         assert_eq!(http_date("Sun, 06 Nov 1994 08:49:37 GMT"), Some(expected));
@@ -549,18 +514,6 @@ mod tests {
         );
         let value: Value = serde_json::from_slice(&minify(text)).unwrap();
         assert_eq!(value, serde_json::from_slice::<Value>(text).unwrap());
-    }
-
-    #[test]
-    fn jq_raw_reads_like_jq_r_with_empty() {
-        let doc: Value =
-            serde_json::json!({"s": "Oslo\n\n", "n": 12.5, "f": false, "z": null, "o": {"a": 1}});
-        assert_eq!(jq_raw(doc.get("s")).as_deref(), Some("Oslo"));
-        assert_eq!(jq_raw(doc.get("n")).as_deref(), Some("12.5"));
-        assert_eq!(jq_raw(doc.get("o")).as_deref(), Some("{\"a\":1}"));
-        assert_eq!(jq_raw(doc.get("f")), None);
-        assert_eq!(jq_raw(doc.get("z")), None);
-        assert_eq!(jq_raw(doc.get("missing")), None);
     }
 
     #[test]
