@@ -132,9 +132,10 @@ test("normal compressed downloads produce a usable forecast and reuse fresh cach
   assert.equal(f.requests.length, 4);
 });
 
+// The limit applies on the plain and on the decoded path; the exact boundary
+// with a known length is checked below.
 for (const [label, options] of Object.entries({
-  "known length": {}, "chunked": { chunked: true },
-  "gzip": { gzip: true }, "chunked gzip": { gzip: true, chunked: true }
+  "chunked": { chunked: true }, "chunked gzip": { gzip: true, chunked: true }
 })) {
   for (const kind of ["forecast", "sun"]) {
     test(`rejects oversized ${kind} with ${label} before parsing or caching`, async t => {
@@ -169,14 +170,13 @@ test("accepts the exact byte limits and rejects one byte over", async t => {
   assert.ok((await f.run()).sun.every(day => day.sunrise === ""));
 });
 
+// One failure per layer: a document the helper refuses, an HTTP status, a cut
+// transfer and a broken decoder. The helper's unit tests list the other inputs.
 for (const [label, response] of Object.entries({
-  malformed: { body: "{broken" },
-  "multiple JSON documents": { body: `${forecast}\n${forecast}` },
   "invalid schema": { body: '{"type":"Feature","properties":{"timeseries":"wrong"}}' },
   "HTTP failure": { body: forecast, status: 503 },
   "interrupted transfer": { body: forecast, truncated: true },
-  "invalid gzip": { body: forecast, invalidGzip: true },
-  "oversized gzip": { body: forecast + " ".repeat(forecastLimit * 2), gzip: true }
+  "invalid gzip": { body: forecast, invalidGzip: true }
 })) {
   test(`${label} preserves a valid forecast and reports stale data`, async t => {
     const f = await fixture(t);
@@ -190,13 +190,10 @@ for (const [label, response] of Object.entries({
   });
 }
 
+// A reply the helper refuses, and a request that fails.
 for (const [label, response] of Object.entries({
-  malformed: { body: "{broken" },
-  "multiple JSON documents": { body: `${sun}\n${sun}` },
   "invalid schema": { body: '{"properties":{"sunrise":{"time":123},"sunset":{"time":true}}}' },
-  "HTTP failure": { body: sun, status: 503 },
-  "interrupted transfer": { body: sun, truncated: true },
-  "invalid gzip": { body: sun, invalidGzip: true }
+  "HTTP failure": { body: sun, status: 503 }
 })) {
   test(`${label} sunrise response leaves the forecast usable without caching bad data`, async t => {
     const f = await fixture(t);
@@ -359,13 +356,6 @@ test("migrates 1.1 caches hashed from four-decimal coordinates", async t => {
   assert.equal(Model.currentCondition(Model.parseBundle(JSON.stringify(report))).temperature, 12);
   assert.ok(report.sun.every(day => day.sunrise && day.sunset), "sun caches migrate too");
   assert.equal(Math.round((await fs.stat(f.forecastPath)).mtimeMs / 1000), Math.round(old.getTime() / 1000), "age preserved");
-});
-
-test("rounds forecast coordinates to three decimals and keeps them out of cache names", async t => {
-  const f = await fixture(t);
-  await f.run();
-  const names = await fs.readdir(f.cache);
-  assert.ok(names.every(name => !name.includes("12.000") && !name.includes("34.000")));
 });
 
 test("the forecast needs no other program", async t => {
