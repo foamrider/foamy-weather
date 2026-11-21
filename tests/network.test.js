@@ -63,10 +63,11 @@ test("forecast retry bursts are bounded with increasing delays", () => {
   c.retries=0;c.networkReady=false;c.scheduleRetry();assert.equal(c.retryTimer.starts,3);
 });
 
-// A place change during a running fetch (the stopped fetch is never shown,
-// no error, no retry): tests/fetch-runtime.py. The query and the coordinates
-// reach the helper on stdin, never in its argv: fetch-runtime.py and
-// search-runtime.py, from /proc while the helper runs.
+// Through the real service and helper instead (tests/fetch-runtime.py): a
+// place change during a running fetch (the stopped fetch is never shown, no
+// error, no retry), a failed fetch (the report stays, the error shows, the
+// retry forces), and the coordinates on stdin, never in the helper's argv
+// (also search-runtime.py for the query).
 test("a missing helper (exit 127) is reported once and nothing retries", () => {
   const c = controller({ networkReady: true, loading: true, retries: 0, retryTimer: timer(), locationRetryTimer: timer(),
     helperUnavailable: false, FoamyNative, errorMessage: "", errorValues: [], dynamicLocationError: "",
