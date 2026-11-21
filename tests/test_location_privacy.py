@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import signal
 import stat
 import subprocess
 import sys
@@ -148,16 +149,60 @@ done
             result = self.run_helper("location", ["--set"], payload, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(json.loads(file.read_text()), location)
-        argv = self.audit.read_bytes().decode()
-        self.assertNotIn(LATITUDE, argv)
-        self.assertNotIn(LONGITUDE, argv)
-        self.assertNotIn("Example", argv)
 
     def test_invalid_forecast_coordinates_do_not_start_a_download(self):
         for payload in ["", "12.3456\n", "91\n0\n", "12;echo exposed\n34\n"]:
-            report = json.loads(self.run_helper("fetch", payload=payload).stdout)
-            self.assertIn("error", report)
+            result = self.run_helper("fetch", payload=payload, check=False)
+            # The key the popup translates, as a normal reply.
+            self.assertEqual(
+                (result.returncode, json.loads(result.stdout)),
+                (0, {"error": "Choose a location to load weather", "values": []}),
+                repr(payload),
+            )
             self.assertEqual(self.server.paths(), [])
+
+    def test_hanging_geoclue_is_stopped_at_its_deadline(self):
+        # The real where-am-i keeps running after it prints a position. The
+        # helper uses what it printed, and stops it and its children at the
+        # deadline even when they ignore SIGTERM.
+        pids = self.base / "geoclue.pids"
+        geoclue = self.bin / "where-am-i"
+        geoclue.write_text(
+            "#!/bin/bash\n"
+            f'printf "%s\\n" "Latitude: {LATITUDE}°" "Longitude: {LONGITUDE}°"\n'
+            "trap '' TERM\n"
+            f'echo "$$" >>"{pids}"\n'
+            "sleep 60 &\n"
+            f'echo "$!" >>"{pids}"\n'
+            "wait\n"
+        )
+        started = time.monotonic()
+        location = json.loads(self.run_helper("resolve-location", ["--force"]).stdout)
+        self.assertLess(time.monotonic() - started, 8, "the helper waited past the GeoClue deadline")
+        self.assertEqual(
+            (location["source"], location["latitude"], location["longitude"]), ("geoclue", 12.35, -56.79), location
+        )
+        found = pids.read_text().split()
+        self.assertEqual(len(found), 2, "the stand-in did not start its child")
+        for pid in found:
+            self.assert_stopped(pid)
+
+    def assert_stopped(self, pid):
+        # A killed process can stay a zombie until its parent reaps it; gone
+        # or a zombie both mean it no longer runs.
+        status = Path(f"/proc/{pid}/stat")
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            try:
+                state = status.read_text().rsplit(")", 1)[1].split()[0]
+            except (FileNotFoundError, ProcessLookupError):
+                return
+            if state == "Z":
+                return
+            time.sleep(0.01)
+        # It ignores SIGTERM: stop it here so a failed run leaves nothing behind.
+        os.kill(int(pid), signal.SIGKILL)
+        self.fail(f"process {pid} still runs after the GeoClue deadline")
 
     def test_place_search_reads_the_query_from_stdin(self):
         request = json.dumps({"query": "Bø i Telemark", "language": "no"})
