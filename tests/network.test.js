@@ -4,14 +4,11 @@ const path = require("node:path");
 const vm = require("node:vm");
 const test = require("node:test");
 
-const sources = {
-  service: fs.readFileSync(path.join(__dirname, "../WeatherService.qml"), "utf8"),
-  panel: fs.readFileSync(path.join(__dirname, "../Panel.qml"), "utf8")
-};
+const service = fs.readFileSync(path.join(__dirname, "../WeatherService.qml"), "utf8");
 const Model = require("../Model.js");
 const FoamyNative = require("../kit/node-loader.cjs").load("FoamyNative");
-function controller(values, functions, file = "service") {
-  const qml = sources[file];
+function controller(values, functions) {
+  const qml = service;
   const context = vm.createContext(values);
   context.root = context;
   // Exercise the controller's production functions with observable process/timer boundaries.
@@ -66,62 +63,11 @@ test("forecast retry bursts are bounded with increasing delays", () => {
   c.retries=0;c.networkReady=false;c.scheduleRetry();assert.equal(c.retryTimer.starts,3);
 });
 
-test("notification summaries keep coordinate fallback labels out of command arguments", () => {
-  const calls = [];
-  const c = controller({ current:{windSpeed:3,windDirection:90,humidity:50},
-    reportLocation:"12.35, -56.79",currentDescription:"Cloudy",currentTemperature:"15°C",units:"metric",
-    conditionIcon:"cloud",windLabel:()=>"E",Preferences:require("../Preferences.js"),
-    FoamyI18n:{t:(key,values)=>values?key.replace("%1",values[0]):key,number:String},
-    Quickshell:{execDetached:args=>calls.push(Array.from(args))},
-  }, ["notifySummary"], "panel");
-  c.notifySummary();
-  assert.equal(calls[0].join(" ").includes("12.35"), false);
-  assert.equal(calls[0].join(" ").includes("-56.79"), false);
-  c.reportLocation="Example Town";c.notifySummary();
-  assert.equal(calls[1][3], "Weather in Example Town");
-});
-
-const bundle = JSON.stringify({ forecast: { properties: { timeseries: [{ time: "2026-10-30T09:00:00Z",
-  data: { instant: { details: { air_temperature: 7 } } } }] } }, sun: [], fetchedAt: "2026-10-30T09:00:00Z" });
-
-test("a report is tagged with the place it was fetched for", () => {
-  const c = fixture(); c.networkReady = true; c.report = null;
-  c.finishWeather(bundle, 0, "12,34", "Example");
-  assert.equal(c.report.query, "12,34"); assert.equal(c.report.locationName, "Example");
-  assert.equal(c.errorMessage, ""); assert.equal(c.loading, false);
-});
-
-test("a fetch for a previous location is ignored and keeps the shown report", () => {
-  const c = fixture(); c.networkReady = true;
-  c.finishWeather(bundle, 0, "12,34", "Old Town");
-  const shown = c.report;
-  c.weatherGeneration = 1; c.loading = true;
-  // A killed or late run may finish with partial output: no error, no retry.
-  c.finishWeather("{\"partial", 0, "12,34", "Old Town");
-  assert.equal(c.report, shown); assert.equal(c.errorMessage, "");
-  assert.equal(c.retryTimer.starts, 0); assert.equal(c.loading, false);
-});
-
-test("helper errors keep their key and values for translation", () => {
-  const c = fixture(); c.networkReady = true;
-  c.finishWeather(JSON.stringify({ error: "Unknown option: %1", values: ["--bogus"] }), 0, "12,34", "");
-  assert.equal(c.errorMessage, "Unknown option: %1");
-  assert.deepEqual(Array.from(c.errorValues), ["--bogus"]);
-});
-
-// A coordinate change during a running fetch: tests/fetch-runtime.py. The
-// helper's argv (no query, no coordinates): fetch-runtime.py and
-// search-runtime.py, from /proc while the helper runs.
-test("the geocoder query goes to the helper on stdin", () => {
-  const c = controller({ editingLocation:true, automaticLocation:false, geocodePendingQuery:"Bø i Telemark",
-    geocodeActiveQuery:"", geocodeGeneration:3, geocodeProc:{running:false}, geocodeLanguage:()=>"no" }, ["startGeocode"], "panel");
-  c.startGeocode();
-  assert.equal(c.geocodeProc.running, true); assert.equal(c.geocodeProc.stdinEnabled, true);
-  assert.equal(c.geocodeProc.generation, 3, "the run carries the search generation");
-  assert.deepEqual(JSON.parse(c.geocodeProc.requestInput), { query: "Bø i Telemark", language: "no" });
-  assert.ok(c.geocodeProc.requestInput.endsWith("\n"));
-});
-
+// Through the real service and helper instead (tests/fetch-runtime.py): a
+// place change during a running fetch (the stopped fetch is never shown, no
+// error, no retry), a failed fetch (the report stays, the error shows, the
+// retry forces), and the coordinates on stdin, never in the helper's argv
+// (also search-runtime.py for the query).
 test("a missing helper (exit 127) is reported once and nothing retries", () => {
   const c = controller({ networkReady: true, loading: true, retries: 0, retryTimer: timer(), locationRetryTimer: timer(),
     helperUnavailable: false, FoamyNative, errorMessage: "", errorValues: [], dynamicLocationError: "",

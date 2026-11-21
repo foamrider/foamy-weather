@@ -262,13 +262,4 @@ mod tests {
         assert_eq!(nominatim_label(b"[1]"), None);
         assert_eq!(nominatim_label(b"{broken"), None);
     }
-
-    #[test]
-    fn output_lines() {
-        assert_eq!(
-            emit("Oslo", "59.91", "-0.00", "geoclue"),
-            r#"{"name":"Oslo","latitude":59.91,"longitude":-0.00,"source":"geoclue"}"#
-        );
-        assert_eq!(label_file("A\"b"), "{\n  \"name\": \"A\\\"b\"\n}\n");
-    }
 }

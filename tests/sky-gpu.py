@@ -2,6 +2,10 @@
 host via the foamy-kit harness (the installed shell, or FOAMY_HOST_45). Skipped when there is no render node or no
 eglfs platform plugin; the offscreen software renderer cannot draw the sky.
 
+The sky's motion gates are checked here too: it runs no frames while hidden
+or under reduced motion and draws nothing without known weather (under the
+software renderer it never draws, so these hold whatever the gates do).
+
 Regression: the sky must keep its cloud structure when it lands in another
 window (Quickshell replaces a layer-shell popup's window across close and
 open). A one-shot (live: false) copy of the noise texture came back empty
@@ -38,6 +42,7 @@ ShellRoot {
   property Item sky: null
   function makeWindow() { return Qt.createQmlObject('import Quickshell; FloatingWindow { implicitWidth: 560; implicitHeight: 230; color: "#1e1e2e" }', shell) }
   function grab(name) { sky.grabToImage(function(r) { r.saveToFile("%OUT%/" + name + ".png"); console.log("GRAB " + name) }) }
+  function check(ok, what) { console.log((ok ? "FOAMY OK " : "FOAMY FAIL ") + what) }
   Component.onCompleted: {
     win = makeWindow()
     holder = Qt.createQmlObject('import QtQuick; Item { width: 560; height: 230 }', shell)
@@ -54,6 +59,20 @@ ShellRoot {
       case 1: shell.holder.parent = null; shell.win.destroy(); break
       case 2: shell.win = shell.makeWindow(); shell.holder.parent = shell.win.contentItem; break
       case 3: shell.grab("moved"); break
+      // The motion gates, observable only where the sky can draw: no frames
+      // while hidden or under reduced motion, nothing to draw without weather.
+      case 4:
+        var sky = shell.sky, current = sky.current
+        sky.shown = false
+        shell.check(!sky.animating && !sky.drawable, "the sky is idle while hidden")
+        sky.shown = true; sky.animate = false
+        shell.check(!sky.animating && sky.drawable, "the sky stays still under reduced motion")
+        sky.animate = true
+        shell.check(sky.animating, "the sky animates when shown with motion")
+        sky.current = { symbol: "nonsense" }
+        shell.check(!sky.drawable && !sky.animating, "the sky draws nothing without known weather")
+        sky.current = current; sky.animate = %ANIMATE%
+        break
       default: console.log(shell.sky.supported ? "FOAMY DONE" : "FOAMY FAIL no GPU renderer"); Qt.quit()
       }
     }

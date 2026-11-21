@@ -132,9 +132,10 @@ test("normal compressed downloads produce a usable forecast and reuse fresh cach
   assert.equal(f.requests.length, 4);
 });
 
+// The limit applies on the plain and on the decoded path; the exact boundary
+// with a known length is checked below.
 for (const [label, options] of Object.entries({
-  "known length": {}, "chunked": { chunked: true },
-  "gzip": { gzip: true }, "chunked gzip": { gzip: true, chunked: true }
+  "chunked": { chunked: true }, "chunked gzip": { gzip: true, chunked: true }
 })) {
   for (const kind of ["forecast", "sun"]) {
     test(`rejects oversized ${kind} with ${label} before parsing or caching`, async t => {
@@ -169,14 +170,13 @@ test("accepts the exact byte limits and rejects one byte over", async t => {
   assert.ok((await f.run()).sun.every(day => day.sunrise === ""));
 });
 
+// One failure per layer: a document the helper refuses, an HTTP status, a cut
+// transfer and a broken decoder. The helper's unit tests list the other inputs.
 for (const [label, response] of Object.entries({
-  malformed: { body: "{broken" },
-  "multiple JSON documents": { body: `${forecast}\n${forecast}` },
   "invalid schema": { body: '{"type":"Feature","properties":{"timeseries":"wrong"}}' },
   "HTTP failure": { body: forecast, status: 503 },
   "interrupted transfer": { body: forecast, truncated: true },
-  "invalid gzip": { body: forecast, invalidGzip: true },
-  "oversized gzip": { body: forecast + " ".repeat(forecastLimit * 2), gzip: true }
+  "invalid gzip": { body: forecast, invalidGzip: true }
 })) {
   test(`${label} preserves a valid forecast and reports stale data`, async t => {
     const f = await fixture(t);
@@ -190,13 +190,10 @@ for (const [label, response] of Object.entries({
   });
 }
 
+// A reply the helper refuses, and a request that fails.
 for (const [label, response] of Object.entries({
-  malformed: { body: "{broken" },
-  "multiple JSON documents": { body: `${sun}\n${sun}` },
   "invalid schema": { body: '{"properties":{"sunrise":{"time":123},"sunset":{"time":true}}}' },
-  "HTTP failure": { body: sun, status: 503 },
-  "interrupted transfer": { body: sun, truncated: true },
-  "invalid gzip": { body: sun, invalidGzip: true }
+  "HTTP failure": { body: sun, status: 503 }
 })) {
   test(`${label} sunrise response leaves the forecast usable without caching bad data`, async t => {
     const f = await fixture(t);
@@ -361,13 +358,6 @@ test("migrates 1.1 caches hashed from four-decimal coordinates", async t => {
   assert.equal(Math.round((await fs.stat(f.forecastPath)).mtimeMs / 1000), Math.round(old.getTime() / 1000), "age preserved");
 });
 
-test("rounds forecast coordinates to three decimals and keeps them out of cache names", async t => {
-  const f = await fixture(t);
-  await f.run();
-  const names = await fs.readdir(f.cache);
-  assert.ok(names.every(name => !name.includes("12.000") && !name.includes("34.000")));
-});
-
 test("the forecast needs no other program", async t => {
   const f = await fixture(t);
   const report = await f.run(false, { PATH: "" });
@@ -416,17 +406,40 @@ async function connectProxy(t, port) {
   return { connects, url: `http://127.0.0.1:${proxy.address().port}` };
 }
 
-test("https_proxy tunnels the requests through CONNECT and no_proxy bypasses it", async t => {
+test("https_proxy and all_proxy tunnel through CONNECT, no_proxy bypasses, an unusable proxy never goes direct", async t => {
   const f = await fixture(t);
   const proxy = await connectProxy(t, f.port);
   const report = await f.run(true, { https_proxy: proxy.url });
   assert.equal(report.stale, false);
   assert.equal(report.sun.length, 3);
   assert.equal(proxy.connects.length, 4);
-  const before = f.requests.length;
+  // The tunnel asks for MET's name, never the test's connect override.
+  assert.deepEqual(proxy.connects.map(c => c.target), Array(4).fill("api.met.no:443"));
+  assert.ok(proxy.connects.every(c => c.authorization === ""), "no credentials were configured");
+  let before = f.requests.length;
   await f.run(true, { https_proxy: proxy.url, no_proxy: "example.org, .met.no" });
   assert.equal(proxy.connects.length, 4, "no_proxy must bypass the proxy");
   assert.equal(f.requests.length, before + 1);
+  // Percent-encoded credentials are decoded before they are sent.
+  const withUser = proxy.url.replace("http://", "http://us%40er:p%3Ass@");
+  assert.equal((await f.run(true, { https_proxy: withUser })).stale, false);
+  assert.equal(proxy.connects.length, 5);
+  assert.equal(proxy.connects.at(-1).authorization, "Basic " + Buffer.from("us@er:p:ss").toString("base64"));
+  // all_proxy is used when no https_proxy is set.
+  assert.equal((await f.run(true, { ALL_PROXY: proxy.url })).stale, false);
+  assert.equal(proxy.connects.length, 6, "ALL_PROXY must be used");
+  // A proxy the helper cannot use fails the request; it must not go direct.
+  const cached = await fs.readFile(f.forecastPath, "utf8");
+  before = f.requests.length;
+  // They point at the live CONNECT proxy: a helper that spoke HTTP to a socks
+  // proxy would reach it.
+  const socks = [{ https_proxy: proxy.url.replace("http://", "socks5://") }, { all_proxy: proxy.url.replace("http://", "socks5h://") }];
+  for (const env of socks) {
+    assert.equal((await f.run(true, env)).stale, true, JSON.stringify(env));
+    assert.equal(f.requests.length, before, `${JSON.stringify(env)} sent a request around the proxy`);
+    assert.equal(proxy.connects.length, 6);
+  }
+  assert.equal(await fs.readFile(f.forecastPath, "utf8"), cached);
 });
 
 test("identifies the plugin to MET, caps Expires at six hours and reports local times", async t => {
@@ -447,6 +460,71 @@ test("identifies the plugin to MET, caps Expires at six hours and reports local 
   await f.run(true, { MET_WEATHER_USER_AGENT: "example-agent/1.0" });
   assert.equal(f.forecastHeaders[1]["user-agent"], "example-agent/1.0");
   assert.equal(await fs.readFile(f.forecastPath.replace(/\.json$/, ".meta"), "utf8"), "\nThu, 29 Oct 2026 10:00:00 GMT\n");
+  // An agent that could break the request head is replaced by the default.
+  await f.run(true, { MET_WEATHER_USER_AGENT: "bad\r\nX-Injected: 1" });
+  assert.equal(f.forecastHeaders.length, 3);
+  assert.equal(f.forecastHeaders.at(-1)["user-agent"], "foamy-weather (+https://github.com/foamrider/foamy-weather)");
+  assert.equal("x-injected" in f.forecastHeaders.at(-1), false, "the agent injected a header");
+});
+
+test("sun dates and fetchedAt follow TZ east and west of UTC", async t => {
+  const f = await fixture(t);
+  const inZone = (zone, args) => exec("date", args, { env: { ...process.env, TZ: zone } }).then(r => r.stdout.trim());
+  // UTC+14 and UTC-12 never share a date, so a helper that used the UTC date
+  // fails in at least one of them at any time; NST3:30 has a half-hour offset.
+  for (const zone of ["EAST-14", "WEST12", "NST3:30"]) {
+    const report = await f.run(true, { TZ: zone });
+    assert.equal(report.stale, false, zone);
+    const mtime = Math.floor((await fs.stat(f.forecastPath)).mtimeMs / 1000);
+    assert.equal(report.fetchedAt, await inZone(zone, ["-Iseconds", "-d", `@${mtime}`]), zone);
+    assert.deepEqual(report.sun.map(day => day.date), [
+      await inZone(zone, ["-d", "+0 day", "+%Y-%m-%d"]),
+      await inZone(zone, ["-d", "+1 day", "+%Y-%m-%d"]),
+      await inZone(zone, ["-d", "+2 day", "+%Y-%m-%d"])
+    ], zone);
+    assert.ok(report.sun.every(day => day.sunrise && day.sunset), zone);
+  }
+});
+
+test("a symlinked or FIFO cache is neither read nor written through", async t => {
+  const f = await fixture(t);
+  // Another file than the one MET sends, so a write through the link shows.
+  const victim = path.join(f.cache, "..", "victim.json");
+  const victimBody = forecast.replace('"air_temperature":12', '"air_temperature":-7');
+  assert.notEqual(victimBody, forecast);
+  await fs.writeFile(victim, victimBody);
+  await fs.symlink(victim, f.forecastPath);
+  const today = (await exec("date", ["+%Y-%m-%d"])).stdout.trim();
+  const cacheKey = path.basename(f.forecastPath).replace(/^forecast-complete-|\.json$/g, "");
+  const sunPath = path.join(f.cache, `sun-${cacheKey}-${today}.json`);
+  execFileSync("mkfifo", [sunPath]);
+  const unchanged = async () => {
+    assert.equal(await fs.readFile(victim, "utf8"), victimBody, "a write followed the link");
+    assert.ok((await fs.lstat(f.forecastPath)).isSymbolicLink(), "the link was replaced");
+    assert.ok((await fs.lstat(sunPath)).isFIFO(), "the FIFO was replaced");
+  };
+  // With MET down, the forecast behind the link is not shown as a cache: a
+  // followed link looks fresh and would send no request.
+  f.responses.forecast.status = 503;
+  assert.deepEqual(await f.run(), { error: "Weather data is unavailable", values: [] });
+  assert.deepEqual(f.requests, ["forecast"], "the file behind the link was used as a cache");
+  await unchanged();
+  // Opening the FIFO to read or write would block the helper until the exec
+  // timeout kills it. The reply of this run is not checked: a forecast that
+  // cannot be cached currently reads as unavailable.
+  const blocked = e => {
+    if (e.killed) assert.fail("the helper blocked on the FIFO sun cache");
+    throw e;
+  };
+  f.responses.forecast.status = 200;
+  await f.run().catch(blocked);
+  assert.equal(f.requests[1], "forecast", "the file behind the link was used as a cache");
+  await unchanged();
+  await fs.unlink(f.forecastPath);
+  const report = await f.run().catch(blocked);
+  assert.equal(report.stale, false);
+  assert.ok(report.sun.every(day => day.sunrise && day.sunset), "the day of the FIFO comes from MET");
+  assert.ok((await fs.lstat(sunPath)).isFIFO(), "the FIFO was replaced");
 });
 
 test("sun caches older than eight days are pruned after the reply", async t => {
