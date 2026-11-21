@@ -406,17 +406,37 @@ async function connectProxy(t, port) {
   return { connects, url: `http://127.0.0.1:${proxy.address().port}` };
 }
 
-test("https_proxy tunnels the requests through CONNECT and no_proxy bypasses it", async t => {
+test("https_proxy and all_proxy tunnel through CONNECT, no_proxy bypasses, an unusable proxy never goes direct", async t => {
   const f = await fixture(t);
   const proxy = await connectProxy(t, f.port);
   const report = await f.run(true, { https_proxy: proxy.url });
   assert.equal(report.stale, false);
   assert.equal(report.sun.length, 3);
   assert.equal(proxy.connects.length, 4);
-  const before = f.requests.length;
+  // The tunnel asks for MET's name, never the test's connect override.
+  assert.deepEqual(proxy.connects.map(c => c.target), Array(4).fill("api.met.no:443"));
+  assert.ok(proxy.connects.every(c => c.authorization === ""), "no credentials were configured");
+  let before = f.requests.length;
   await f.run(true, { https_proxy: proxy.url, no_proxy: "example.org, .met.no" });
   assert.equal(proxy.connects.length, 4, "no_proxy must bypass the proxy");
   assert.equal(f.requests.length, before + 1);
+  // Percent-encoded credentials are decoded before they are sent.
+  const withUser = proxy.url.replace("http://", "http://us%40er:p%3Ass@");
+  assert.equal((await f.run(true, { https_proxy: withUser })).stale, false);
+  assert.equal(proxy.connects.length, 5);
+  assert.equal(proxy.connects.at(-1).authorization, "Basic " + Buffer.from("us@er:p:ss").toString("base64"));
+  // all_proxy is used when no https_proxy is set.
+  assert.equal((await f.run(true, { ALL_PROXY: proxy.url })).stale, false);
+  assert.equal(proxy.connects.length, 6, "ALL_PROXY must be used");
+  // A proxy the helper cannot use fails the request; it must not go direct.
+  const cached = await fs.readFile(f.forecastPath, "utf8");
+  before = f.requests.length;
+  for (const env of [{ https_proxy: "socks5://127.0.0.1:1" }, { all_proxy: "socks5h://127.0.0.1:1" }]) {
+    assert.equal((await f.run(true, env)).stale, true, JSON.stringify(env));
+    assert.equal(f.requests.length, before, `${JSON.stringify(env)} sent a request around the proxy`);
+    assert.equal(proxy.connects.length, 6);
+  }
+  assert.equal(await fs.readFile(f.forecastPath, "utf8"), cached);
 });
 
 test("identifies the plugin to MET, caps Expires at six hours and reports local times", async t => {
