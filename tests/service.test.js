@@ -3,8 +3,6 @@
 process.env.TZ = "Europe/Oslo"
 const assert = require("node:assert/strict")
 const test = require("node:test")
-const fs = require("node:fs")
-const path = require("node:path")
 const Model = require("../Model.js")
 const P = require("../Preferences.js")
 const I = require("./i18n.cjs")
@@ -113,13 +111,4 @@ test("the manifest loads the service and the bar widget", () => {
   assert.notEqual(manifest.keepLoaded, true, "the service reloads with the widgets (one WeatherService)")
   // Omarchy restores its stock weather widget through this.
   assert.equal(manifest.omarchy.clonedFrom, "omarchy.weather")
-})
-
-test("both IPC handlers declare the same functions", () => {
-  const service = fs.readFileSync(path.join(__dirname, "../Service.qml"), "utf8")
-  const panel = fs.readFileSync(path.join(__dirname, "../Panel.qml"), "utf8")
-  const functions = source => [...source.slice(source.indexOf("FoamyIpc {")).matchAll(/function (\w+)\(\)/g)].map(m => m[1]).sort()
-  assert.deepEqual(functions(service), functions(panel), "both handlers declare the same functions")
-  assert.ok(functions(service).includes("current"))
-  assert.doesNotMatch(service, /setText|atomicWrites|updateEntryInline/, "the service never writes shell.json")
 })

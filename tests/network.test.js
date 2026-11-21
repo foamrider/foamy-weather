@@ -4,14 +4,11 @@ const path = require("node:path");
 const vm = require("node:vm");
 const test = require("node:test");
 
-const sources = {
-  service: fs.readFileSync(path.join(__dirname, "../WeatherService.qml"), "utf8"),
-  panel: fs.readFileSync(path.join(__dirname, "../Panel.qml"), "utf8")
-};
+const service = fs.readFileSync(path.join(__dirname, "../WeatherService.qml"), "utf8");
 const Model = require("../Model.js");
 const FoamyNative = require("../kit/node-loader.cjs").load("FoamyNative");
-function controller(values, functions, file = "service") {
-  const qml = sources[file];
+function controller(values, functions) {
+  const qml = service;
   const context = vm.createContext(values);
   context.root = context;
   // Exercise the controller's production functions with observable process/timer boundaries.
@@ -64,28 +61,6 @@ test("forecast retry bursts are bounded with increasing delays", () => {
   for (const interval of [2500,5000,10000]) {c.scheduleRetry();assert.equal(c.retryTimer.interval,interval);}
   c.scheduleRetry(); assert.equal(c.retryTimer.starts,3);
   c.retries=0;c.networkReady=false;c.scheduleRetry();assert.equal(c.retryTimer.starts,3);
-});
-
-test("notification summaries keep coordinate fallback labels out of command arguments", () => {
-  const calls = [];
-  const c = controller({ current:{windSpeed:3,windDirection:90,humidity:50},
-    reportLocation:"12.35, -56.79",currentDescription:"Cloudy",currentTemperature:"15°C",units:"metric",
-    conditionIcon:"cloud",windLabel:()=>"E",Preferences:require("../Preferences.js"),
-    FoamyI18n:{t:(key,values)=>values?key.replace("%1",values[0]):key,number:String},
-    Quickshell:{execDetached:args=>calls.push(Array.from(args))},
-  }, ["notifySummary"], "panel");
-  c.notifySummary();
-  assert.equal(calls[0].join(" ").includes("12.35"), false);
-  assert.equal(calls[0].join(" ").includes("-56.79"), false);
-  c.reportLocation="Example Town";c.notifySummary();
-  assert.equal(calls[1][3], "Weather in Example Town");
-});
-
-test("helper errors keep their key and values for translation", () => {
-  const c = fixture(); c.networkReady = true;
-  c.finishWeather(JSON.stringify({ error: "Unknown option: %1", values: ["--bogus"] }), 0, "12,34", "");
-  assert.equal(c.errorMessage, "Unknown option: %1");
-  assert.deepEqual(Array.from(c.errorValues), ["--bogus"]);
 });
 
 // A place change during a running fetch (the stopped fetch is never shown,

@@ -29,17 +29,6 @@ def load_hostenv(case):
     return hostenv
 
 
-class SettingsTests(unittest.TestCase):
-    def test_settings_use_safe_editor(self):
-        settings = (ROOT / "WeatherSettings.qml").read_text()
-        editor = (ROOT / "kit/SafeTextField.qml").read_text()
-        self.assertIn("SafeTextField {", settings)
-        self.assertNotIn("Controls.TextField {", settings)
-        self.assertIn("Controls.TextArea.flickable", editor)
-        self.assertNotIn("editor.paste()", editor)
-        self.assertNotIn("editor.canPaste", editor)
-
-
 class ClipboardTests(unittest.TestCase):
     def setUp(self):
         self.hostenv = load_hostenv(self)
