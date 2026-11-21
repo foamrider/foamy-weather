@@ -431,7 +431,10 @@ test("https_proxy and all_proxy tunnel through CONNECT, no_proxy bypasses, an un
   // A proxy the helper cannot use fails the request; it must not go direct.
   const cached = await fs.readFile(f.forecastPath, "utf8");
   before = f.requests.length;
-  for (const env of [{ https_proxy: "socks5://127.0.0.1:1" }, { all_proxy: "socks5h://127.0.0.1:1" }]) {
+  // They point at the live CONNECT proxy: a helper that spoke HTTP to a socks
+  // proxy would reach it.
+  const socks = [{ https_proxy: proxy.url.replace("http://", "socks5://") }, { all_proxy: proxy.url.replace("http://", "socks5h://") }];
+  for (const env of socks) {
     assert.equal((await f.run(true, env)).stale, true, JSON.stringify(env));
     assert.equal(f.requests.length, before, `${JSON.stringify(env)} sent a request around the proxy`);
     assert.equal(proxy.connects.length, 6);
@@ -500,20 +503,25 @@ test("a symlinked or FIFO cache is neither read nor written through", async t =>
     assert.ok((await fs.lstat(f.forecastPath)).isSymbolicLink(), "the link was replaced");
     assert.ok((await fs.lstat(sunPath)).isFIFO(), "the FIFO was replaced");
   };
-  // With MET down, the forecast behind the link is not shown as a cache.
+  // With MET down, the forecast behind the link is not shown as a cache: a
+  // followed link looks fresh and would send no request.
   f.responses.forecast.status = 503;
   assert.deepEqual(await f.run(), { error: "Weather data is unavailable", values: [] });
+  assert.deepEqual(f.requests, ["forecast"], "the file behind the link was used as a cache");
   await unchanged();
   // Opening the FIFO to read or write would block the helper until the exec
-  // timeout fails the test.
-  // The reply of this run is not checked: a forecast that cannot be cached
-  // currently reads as unavailable.
+  // timeout kills it. The reply of this run is not checked: a forecast that
+  // cannot be cached currently reads as unavailable.
+  const blocked = e => {
+    if (e.killed) assert.fail("the helper blocked on the FIFO sun cache");
+    throw e;
+  };
   f.responses.forecast.status = 200;
-  await f.run();
-  assert.deepEqual(f.requests.slice(0, 2), ["forecast", "forecast"], "the file behind the link was used as a cache");
+  await f.run().catch(blocked);
+  assert.equal(f.requests[1], "forecast", "the file behind the link was used as a cache");
   await unchanged();
   await fs.unlink(f.forecastPath);
-  const report = await f.run();
+  const report = await f.run().catch(blocked);
   assert.equal(report.stale, false);
   assert.ok(report.sun.every(day => day.sunrise && day.sunset), "the day of the FIFO comes from MET");
   assert.ok((await fs.lstat(sunPath)).isFIFO(), "the FIFO was replaced");

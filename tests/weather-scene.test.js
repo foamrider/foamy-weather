@@ -27,10 +27,13 @@ for (const weight of ["light", "", "heavy"]) {
   }
 }
 assert.ok(scene("heavyrain").rain > scene("lightrain").rain)
-// MET keeps these two misspellings in its public codes; both must draw a sky.
+// MET keeps these two misspellings in its public codes; both must draw the
+// sky of the correctly spelled code.
 for (const code of ["lightssleetshowersandthunder", "lightssnowshowersandthunder"]) {
-  for (const suffix of ["", "_day", "_night", "_polartwilight"])
+  for (const suffix of ["", "_day", "_night", "_polartwilight"]) {
     assert.equal(scene(code + suffix).available, true, code + suffix)
+    assert.deepEqual(scene(code + suffix), scene(code.replace("lights", "light") + suffix), code + suffix)
+  }
 }
 assert.ok(scene("fog").haze > scene("clearsky_day").haze)
 assert.equal(Scene.conditions(null, noon, location).available, false)
