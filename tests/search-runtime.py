@@ -145,12 +145,18 @@ ShellRoot {
 """
 
 
-# The argv of every foamy-weather-helper (and wrapper) seen during a search.
+# The argv of every foamy-weather-helper (and wrapper) of this run seen
+# during a search.
 ARGVS = []
 ARRIVED = None
+# This run's directory (main() sets it before the shell starts).
+RUN_BASE = None
 
 
 def helper_argvs():
+    # Other runs and the live widget may run the helper too: a process counts
+    # only when an argument lies under this run's directory.
+    prefix = f"{RUN_BASE}/"
     found = []
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
@@ -160,7 +166,7 @@ def helper_argvs():
         except OSError:
             continue
         text = [part.decode(errors="replace") for part in argv if part]
-        if any("foamy-weather-helper" in part for part in text):
+        if any("foamy-weather-helper" in part for part in text) and any(part.startswith(prefix) for part in text):
             found.append(text)
     return found
 
@@ -186,7 +192,7 @@ def slow_search(handler):
 
 
 def main():
-    global ARRIVED
+    global ARRIVED, RUN_BASE
     with tempfile.TemporaryDirectory(prefix="foamy-weather-search-") as certs_dir:
         certs = fakenet.make_certs(certs_dir)
         ARRIVED = Path(certs_dir) / "arrived"
@@ -196,6 +202,7 @@ def main():
             run = harness.Run(
                 "4.5", shell, plugin=ROOT, prefix="foamy-weather-search-", system_bus="private", language="nb"
             )
+            RUN_BASE = run.base
             connectivity = run.base / "connectivity"
             fake_nm.set_connectivity(connectivity, fake_nm.NONE)
             run.env = fakenet.network_env(run.env, server.port, certs["ca"])

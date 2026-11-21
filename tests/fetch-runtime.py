@@ -7,12 +7,15 @@ bus, which Quickshell's Networking reads:
 - offline, nothing is fetched; when the network comes back, the place's
   forecast arrives;
 - a new place keeps the previous report on screen while it loads;
+- a middle click on the bar button and `r` in the popup start a forced
+  fetch;
 - a place change during a running fetch stops that fetch, never applies its
   result or its end (no error, no retry), and fetches the new place instead;
 - a failed fetch keeps the shown report, says why, and retries with --force;
 - automatic location runs GeoClue (a stand-in) through the helper, names the
-  place from the reverse lookup and fetches its rounded position, and turning
-  it off goes back to the searched place;
+  place from the reverse lookup, fetches its rounded position and credits
+  OpenStreetMap in the popup's footer, and turning it off goes back to the
+  searched place;
 - the User-Agent setting reaches MET Norway and Nominatim, trimmed;
 - Limited connectivity (VPNs, WARP) counts as online;
 - coordinates reach the helper on stdin only, never in its argv.
@@ -67,6 +70,7 @@ import Quickshell.Io
 import Quickshell.Networking
 import "harness"
 import "plugin" as Weather
+import "plugin/kit" as Kit
 
 ShellRoot {
   id: shell
@@ -84,15 +88,37 @@ ShellRoot {
     Qt.quit()
   }
   function query(place) { return String(place[1]) + "," + String(place[2]) }
+  // The widget's bar button (the item with the pressed(button) signal).
+  function button() {
+    var kids = widget ? widget.children : []
+    for (var i = 0; i < kids.length; i++)
+      if (typeof kids[i].pressed === "function" && "labelVisible" in kids[i]) return kids[i]
+    return null
+  }
+  function findText(item, text) {
+    if (!item) return null
+    if (item.text === text) return item
+    var kids = item.children || []
+    for (var i = 0; i < kids.length; i++) { var hit = findText(kids[i], text); if (hit) return hit }
+    return null
+  }
+  // refresh() starts the helper at once; a forced fetch ends in --force.
+  function forcedFetchRunning() {
+    var command = s.weatherProc.command
+    return s.weatherProc.running && command[command.length - 1] === "--force"
+  }
   readonly property var places: PLACES
 
   MockBar { id: bar }
   Item { id: holder }
   FoamyWait { id: wait }
+  Kit.FoamyCursor { id: keys }
   // Written by the stand-in once place B's request has arrived.
   FileView { id: arrived; path: ARRIVED; blockLoading: true; printErrors: false }
   // One line per forecast request for place D.
   FileView { id: failedRequests; path: FAILED; blockLoading: true; printErrors: false }
+  // The searched place on disk, which the helper writes after a search.
+  FileView { id: savedPlace; path: Weather.WeatherService.localLocationFile.path; blockWrites: true; printErrors: false }
   function failedCount() { failedRequests.reload(); return failedRequests.text().split("\n").length - 1 }
 
   Connections {
@@ -181,10 +207,44 @@ ShellRoot {
 
   function retried(ok) {
     if (!ok) return finish()
-    // Back to place C: its forecast is fresh in the cache, so nothing is fetched.
-    s.localLocationState = { name: "Place C", latitude: places.C[1], longitude: places.C[2] }
-    wait.waitFor(function() { return s.reportCurrent && !s.loading && s.report.query === query(places.C) }, 30000,
-      automatic, "place C comes back from the cache")
+    // Back to place C: its forecast is fresh in the cache, so nothing is
+    // fetched. This time the place is saved as a search saves it, because
+    // opening the popup reads the saved place again.
+    savedPlace.setText(JSON.stringify({ name: "Place C", latitude: places.C[1], longitude: places.C[2] }) + "\n")
+    s.reloadLocations()
+    wait.waitFor(function() {
+      return s.reportCurrent && !s.loading && !s.weatherProc.running && s.report.query === query(places.C)
+    }, 30000, refreshes, "place C comes back from the cache")
+  }
+
+  function refreshes(ok) {
+    if (!ok) return finish()
+    // Online, a middle click forces a refresh (C's cache answers, main() below).
+    shell.button().pressed(Qt.MiddleButton)
+    check(forcedFetchRunning(), "a middle click starts a forced fetch: " + JSON.stringify(s.weatherProc.command))
+    wait.waitFor(function() { return !s.loading && !s.weatherProc.running }, 30000, middleRefreshed,
+      "the middle click's fetch ends")
+  }
+
+  function middleRefreshed(ok) {
+    if (!ok) return finish()
+    // Opening the popup refreshes without force; `r` waits for that to end.
+    widget.panel.openFromHotkey()
+    wait.waitFor(function() { return widget.panel.popup.bodyItem !== null && !s.loading && !s.weatherProc.running }, 30000,
+      function(ok) {
+        if (!ok) return finish()
+        keys.emitTextKey(widget.panel.popup.bodyItem, "r")
+        check(forcedFetchRunning(), "`r` in the popup starts a forced fetch: " + JSON.stringify(s.weatherProc.command))
+        wait.waitFor(function() { return !s.loading && !s.weatherProc.running }, 30000, keyRefreshed, "the `r` fetch ends")
+      }, "the popup opens and its refresh ends")
+  }
+
+  function keyRefreshed(ok) {
+    if (!ok) return finish()
+    widget.panel.close()
+    check(s.reportCurrent && s.report.query === query(places.C) && s.errorMessage === "",
+      "the forced refreshes keep place C's report: " + JSON.stringify([s.report.query, s.errorMessage]))
+    automatic(true)
   }
 
   function automatic(ok) {
@@ -199,17 +259,26 @@ ShellRoot {
     if (!ok) return finish()
     check(s.report.locationName === "Example Town" && s.coordinateQuery === "12.35,56.79",
       "the automatic place is named and rounded to about 1 km: " + s.coordinateQuery)
-    check(widget.panel.automaticLabel && !s.resolvingLocation, "the popup credits OpenStreetMap for the place name")
-    widget.panel.savePreference("automaticLocation", false)
-    wait.waitFor(function() { return s.coordinateQuery === query(places.C) && s.reportCurrent && !s.loading }, 30000,
-      function(ok) { finish() }, "turning automatic location off goes back to the searched place")
+    widget.panel.openFromHotkey()
+    wait.waitFor(function() { return widget.panel.popup.bodyItem !== null }, 10000, function(ok) {
+      if (!ok) return finish()
+      check(findText(widget.panel.popup.bodyItem, "MET Norway · OpenStreetMap") !== null,
+        "the popup's footer credits OpenStreetMap for the place name")
+      widget.panel.close()
+      widget.panel.savePreference("automaticLocation", false)
+      wait.waitFor(function() { return s.coordinateQuery === query(places.C) && s.reportCurrent && !s.loading }, 30000,
+        function(ok) { finish() }, "turning automatic location off goes back to the searched place")
+    }, "the popup opens")
   }
 }
 """
 
 
-def helper_argvs():
-    """The argv of every running foamy-weather-helper (and its wrapper)."""
+def helper_argvs(base):
+    """The argv of every running foamy-weather-helper (and its wrapper) of the
+    run in `base`. Other runs and the live widget may run the helper too: a
+    process counts only when an argument lies under this run's directory."""
+    prefix = f"{base}/"
     found = []
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
@@ -219,7 +288,7 @@ def helper_argvs():
         except OSError:
             continue
         text = [part.decode(errors="replace") for part in argv if part]
-        if any("foamy-weather-helper" in part for part in text):
+        if any("foamy-weather-helper" in part for part in text) and any(part.startswith(prefix) for part in text):
             found.append(text)
     return found
 
@@ -269,14 +338,14 @@ def main():
             if "lat=62.500&lon=8.250" in handler.path:
                 # The fetch for B is connected now: look at its argv, tell the
                 # shell, then answer too late for a place it has left.
-                argvs.extend(helper_argvs())
+                argvs.extend(helper_argvs(run.base))
                 arrived.write_text("yes\n")
                 time.sleep(SLOW_DELAY)
             if AUTOMATIC in handler.path:
-                argvs.extend(helper_argvs())
+                argvs.extend(helper_argvs(run.base))
             failing = "lat=64.500&lon=10.500" in handler.path
             if failing:
-                failed_argvs.append([argv for argv in helper_argvs() if "fetch" in argv])
+                failed_argvs.append([argv for argv in helper_argvs(run.base) if "fetch" in argv])
                 with failed.open("a") as log:
                     log.write(handler.path + "\n")
             body = b"{}" if failing else fakenet.forecast_body().encode()
@@ -293,7 +362,7 @@ def main():
 
         def reverse(handler):
             # The automatic lookup's helper is running: look at its argv.
-            argvs.extend(helper_argvs())
+            argvs.extend(helper_argvs(run.base))
             body = b'{"address":{"town":"Example Town"}}'
             handler.send_response(200)
             handler.send_header("Content-Type", "application/json")
@@ -326,6 +395,10 @@ def main():
             state.chmod(0o600)
             run.env = fakenet.network_env(run.env, server.port, certs["ca"])
             run.env["WEATHER_GEOCLUE_COMMAND"] = str(geoclue)
+            # The middle click and `r` force refreshes of place C right after
+            # its download: the cache must answer them on a loaded machine
+            # too, so C reaches MET once.
+            run.env["MET_WEATHER_FORCE_MIN_AGE"] = "3600"
             # The fake goes on the bus before qs: Quickshell looks for
             # NetworkManager only once, at start.
             run.start_buses()
