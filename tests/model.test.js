@@ -1,5 +1,6 @@
 process.env.TZ = "Europe/Oslo"
 const assert = require("node:assert/strict")
+const test = require("node:test")
 const Model = require("../Model.js")
 
 function entry(time, temperature, symbol, precipitation = 0, uvIndex = 0) {
@@ -53,98 +54,113 @@ const bundle = {
   ]
 }
 
-assert.deepEqual(Model.parseLocationFile('{"name":"Example","latitude":12.34,"longitude":56.78}'), {
-  name: "Example",
-  latitude: 12.34,
-  longitude: 56.78
+test("location files", () => {
+  const unset = { name: "", latitude: null, longitude: null }
+  for (const [raw, expected] of [
+    ['{"name":"Example","latitude":12.34,"longitude":56.78}', { name: "Example", latitude: 12.34, longitude: 56.78 }],
+    ['{"label":"Example","lat":"12.34","lon":"56.78"}', { name: "Example", latitude: 12.34, longitude: 56.78 }],
+    // Out-of-range coordinates keep the name but give no place to fetch.
+    ['{"name":"Far","latitude":91,"longitude":0}', { name: "Far", latitude: null, longitude: null }],
+    ['{"name":"X","latitude":1,"longitude":181}', { name: "X", latitude: null, longitude: null }],
+    // A name that is not text falls back to the label.
+    ['{"name":5,"label":"Kept","lat":1,"lon":2}', { name: "Kept", latitude: 1, longitude: 2 }],
+    ["broken", unset], ["null", unset], ["5", unset], ["", unset]
+  ]) assert.deepEqual(Model.parseLocationFile(raw), expected, raw)
 })
-assert.deepEqual(Model.parseLocationFile('{"label":"Example","lat":"12.34","lon":"56.78"}'), {
-  name: "Example",
-  latitude: 12.34,
-  longitude: 56.78
-})
-assert.deepEqual(Model.parseLocationFile("broken"), { name: "", latitude: null, longitude: null })
-assert.deepEqual(Model.parseResolvedLocation('{"name":"Example Town","latitude":12.3456,"longitude":56.7890,"source":"geoclue"}'), {
-  name: "Example Town",
-  latitude: 12.3456,
-  longitude: 56.7890,
-  source: "geoclue",
-  error: "",
-  errorValues: []
-})
-assert.deepEqual(Model.parseResolvedLocation('{"error":"Could not find automatic location"}'), {
-  name: "",
-  latitude: null,
-  longitude: null,
-  source: "",
-  error: "Could not find automatic location",
-  errorValues: []
+
+test("automatic location replies", () => {
+  assert.deepEqual(Model.parseResolvedLocation('{"name":"Example Town","latitude":12.3456,"longitude":56.7890,"source":"geoclue"}'), {
+    name: "Example Town",
+    latitude: 12.3456,
+    longitude: 56.7890,
+    source: "geoclue",
+    error: "",
+    errorValues: []
+  })
+  assert.deepEqual(Model.parseResolvedLocation('{"error":"Could not find automatic location"}'), {
+    name: "",
+    latitude: null,
+    longitude: null,
+    source: "",
+    error: "Could not find automatic location",
+    errorValues: []
+  })
+  // Script errors carry their %n values separately so the key stays translatable.
+  assert.deepEqual(Model.parseResolvedLocation('{"error":"Unknown option: %1","values":["--bogus"]}').errorValues, ["--bogus"])
 })
 
 const parsed = Model.parseBundle(JSON.stringify(bundle))
-assert.ok(parsed)
-assert.equal(Model.parseBundle('{"forecast":{}}'), null)
+test("bundle", () => {
+  assert.ok(parsed)
+  assert.equal(Model.parseBundle('{"forecast":{}}'), null)
+})
 
-const current = Model.currentCondition(parsed)
-assert.equal(current.temperature, 11.4)
-assert.equal(current.uvIndex, 2.4)
-assert.equal(Model.uvIndex(current.uvIndex), "2.4")
-assert.equal(Model.uvIndex(null), "—")
-assert.equal(Model.uvIndex(current.uvIndex, (v, d) => v.toFixed(d).replace(".", ",")), "2,4")
-assert.equal(Model.uvIndex(3), "3")
-assert.equal(Model.iconForSymbol(current.symbol), "\u{f0590}")
-assert.equal(Model.descriptionForSymbol("partlycloudy_day"), "Partly cloudy")
-assert.equal(Model.windDirection(current.windDirection), "SV")
+test("current readings", () => {
+  const current = Model.currentCondition(parsed)
+  assert.equal(current.temperature, 11.4)
+  assert.equal(current.uvIndex, 2.4)
+  assert.equal(Model.uvIndex(current.uvIndex), "2.4")
+  assert.equal(Model.uvIndex(null), "—")
+  assert.equal(Model.uvIndex(current.uvIndex, (v, d) => v.toFixed(d).replace(".", ",")), "2,4")
+  assert.equal(Model.uvIndex(3), "3")
+  assert.equal(Model.iconForSymbol(current.symbol), "\u{f0590}")
+  assert.equal(Model.descriptionForSymbol("partlycloudy_day"), "Partly cloudy")
+  assert.equal(Model.windDirection(current.windDirection), "SV")
+})
 
-const days = Model.forecastDays(parsed, new Date("2026-08-21T08:15:00+02:00"))
-assert.equal(days.length, 3)
-assert.equal(days[0].date, "2026-08-21")
-assert.equal(days[0].high, 16)
-assert.equal(days[0].low, 11)
-assert.equal(days[0].precipitation, 1)
-assert.equal(days[0].sunrise, "2026-08-21T05:50:00+02:00")
-assert.equal(days[1].symbol, "fair_day")
-assert.equal(days[2].precipitation, 2)
-assert.ok(days.every(day => day.hours.length > 0))
+test("three days from today", () => {
+  const days = Model.forecastDays(parsed, new Date("2026-08-21T08:15:00+02:00"))
+  assert.equal(days.length, 3)
+  assert.equal(days[0].date, "2026-08-21")
+  assert.equal(days[0].high, 16)
+  assert.equal(days[0].low, 11)
+  assert.equal(days[0].precipitation, 1)
+  assert.equal(days[0].sunrise, "2026-08-21T05:50:00+02:00")
+  assert.equal(days[1].symbol, "fair_day")
+  assert.equal(days[2].precipitation, 2)
+  assert.ok(days.every(day => day.hours.length > 0))
+})
 
-const rollingEntries = []
-const rollingStart = new Date("2026-08-21T21:00:00+02:00")
-for (let index = 0; index < 17; index++) {
-  const time = new Date(rollingStart.getTime() + index * 3 * 60 * 60 * 1000)
-  rollingEntries.push(entry(time.toISOString(), 12 + index / 10, "partlycloudy_day"))
-}
-const rollingDays = Model.forecastDays({
-  forecast: { properties: { timeseries: rollingEntries } },
-  sun: []
-}, new Date("2026-08-21T20:30:00+02:00"))
-assert.deepEqual(rollingDays[0].hours.map(point => point.time), [
-  "21:00", "00:00", "03:00", "06:00", "09:00", "12:00", "15:00", "18:00"
-])
-assert.equal(rollingDays[0].hours.length, rollingDays[1].hours.length)
-assert.equal(rollingDays[0].hours[7].dateKey, "2026-08-22")
+test("hourly slots keep filling across midnight", () => {
+  const rollingEntries = []
+  const rollingStart = new Date("2026-08-21T21:00:00+02:00")
+  for (let index = 0; index < 17; index++) {
+    const time = new Date(rollingStart.getTime() + index * 3 * 60 * 60 * 1000)
+    rollingEntries.push(entry(time.toISOString(), 12 + index / 10, "partlycloudy_day"))
+  }
+  const rollingDays = Model.forecastDays({
+    forecast: { properties: { timeseries: rollingEntries } },
+    sun: []
+  }, new Date("2026-08-21T20:30:00+02:00"))
+  assert.deepEqual(rollingDays[0].hours.map(point => point.time), [
+    "21:00", "00:00", "03:00", "06:00", "09:00", "12:00", "15:00", "18:00"
+  ])
+  assert.equal(rollingDays[0].hours.length, rollingDays[1].hours.length)
+  assert.equal(rollingDays[0].hours[7].dateKey, "2026-08-22")
+})
 
-assert.equal(Model.formatIsoTime("2026-08-21T05:50:00+02:00"), "05:50")
-// Script errors carry their %n values separately so the key stays translatable.
-assert.deepEqual(Model.parseResolvedLocation('{"error":"Unknown option: %1","values":["--bogus"]}').errorValues, ["--bogus"])
+test("sunset time", () => {
+  assert.equal(Model.formatIsoTime("2026-08-21T05:50:00+02:00"), "05:50")
+})
 
-// Search replies are untrusted: at most the five places asked for (count=5),
-// each with a string name and numeric coordinates the location file accepts.
-const place = (name, latitude, longitude, extra = {}) => ({ name, latitude, longitude, ...extra })
-assert.deepEqual(Model.parseGeocodingResults(JSON.stringify({ results: [
-  place("Oslo", 59.91, 10.75, { admin1: "Oslo", country: "Norway" }),
-  place("Bergen", 60.39, 5.32, { admin1: { nested: true }, country: "Norway" })
-] })), [
-  { name: "Oslo", description: "Oslo, Norway", latitude: 59.91, longitude: 10.75 },
-  { name: "Bergen", description: "Norway", latitude: 60.39, longitude: 5.32 }
-])
-assert.deepEqual(Model.parseGeocodingResults(JSON.stringify({ results: [
-  place("Text", "59.91", 10.75), place("North", 91, 0), place("East", 0, 181), place("Gone", null, 0),
-  place({ name: "Object" }, 1, 1), place("", 1, 1), null, "Oslo", place("Kept", -90, 180)
-] })).map(result => result.name), ["Kept"])
-const many = Array.from({ length: 2000 }, (_, i) => place("Place " + i, 1, 1))
-assert.deepEqual(Model.parseGeocodingResults(JSON.stringify({ results: many })).map(result => result.name),
-  ["Place 0", "Place 1", "Place 2", "Place 3", "Place 4"])
-for (const raw of ["", "{", "null", "[]", '{"results":"Oslo"}', '{"results":{"length":3}}', '{"error":true}'])
-  assert.deepEqual(Model.parseGeocodingResults(raw), [], raw)
-
-console.log("Weather model tests passed.")
+test("search replies are untrusted", () => {
+  // Search replies are untrusted: at most the five places asked for (count=5),
+  // each with a string name and numeric coordinates the location file accepts.
+  const place = (name, latitude, longitude, extra = {}) => ({ name, latitude, longitude, ...extra })
+  assert.deepEqual(Model.parseGeocodingResults(JSON.stringify({ results: [
+    place("Oslo", 59.91, 10.75, { admin1: "Oslo", country: "Norway" }),
+    place("Bergen", 60.39, 5.32, { admin1: { nested: true }, country: "Norway" })
+  ] })), [
+    { name: "Oslo", description: "Oslo, Norway", latitude: 59.91, longitude: 10.75 },
+    { name: "Bergen", description: "Norway", latitude: 60.39, longitude: 5.32 }
+  ])
+  assert.deepEqual(Model.parseGeocodingResults(JSON.stringify({ results: [
+    place("Text", "59.91", 10.75), place("North", 91, 0), place("East", 0, 181), place("Gone", null, 0),
+    place({ name: "Object" }, 1, 1), place("", 1, 1), null, "Oslo", place("Kept", -90, 180)
+  ] })).map(result => result.name), ["Kept"])
+  const many = Array.from({ length: 2000 }, (_, i) => place("Place " + i, 1, 1))
+  assert.deepEqual(Model.parseGeocodingResults(JSON.stringify({ results: many })).map(result => result.name),
+    ["Place 0", "Place 1", "Place 2", "Place 3", "Place 4"])
+  for (const raw of ["", "{", "null", "[]", '{"results":"Oslo"}', '{"results":{"length":3}}', '{"error":true}'])
+    assert.deepEqual(Model.parseGeocodingResults(raw), [], raw)
+})
