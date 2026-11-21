@@ -457,6 +457,66 @@ test("identifies the plugin to MET, caps Expires at six hours and reports local 
   await f.run(true, { MET_WEATHER_USER_AGENT: "example-agent/1.0" });
   assert.equal(f.forecastHeaders[1]["user-agent"], "example-agent/1.0");
   assert.equal(await fs.readFile(f.forecastPath.replace(/\.json$/, ".meta"), "utf8"), "\nThu, 29 Oct 2026 10:00:00 GMT\n");
+  // An agent that could break the request head is replaced by the default.
+  await f.run(true, { MET_WEATHER_USER_AGENT: "bad\r\nX-Injected: 1" });
+  assert.equal(f.forecastHeaders.length, 3);
+  assert.equal(f.forecastHeaders.at(-1)["user-agent"], "foamy-weather (+https://github.com/foamrider/foamy-weather)");
+  assert.equal("x-injected" in f.forecastHeaders.at(-1), false, "the agent injected a header");
+});
+
+test("sun dates and fetchedAt follow TZ east and west of UTC", async t => {
+  const f = await fixture(t);
+  const inZone = (zone, args) => exec("date", args, { env: { ...process.env, TZ: zone } }).then(r => r.stdout.trim());
+  // UTC+14 and UTC-12 never share a date, so a helper that used the UTC date
+  // fails in at least one of them at any time; NST3:30 has a half-hour offset.
+  for (const zone of ["EAST-14", "WEST12", "NST3:30"]) {
+    const report = await f.run(true, { TZ: zone });
+    assert.equal(report.stale, false, zone);
+    const mtime = Math.floor((await fs.stat(f.forecastPath)).mtimeMs / 1000);
+    assert.equal(report.fetchedAt, await inZone(zone, ["-Iseconds", "-d", `@${mtime}`]), zone);
+    assert.deepEqual(report.sun.map(day => day.date), [
+      await inZone(zone, ["-d", "+0 day", "+%Y-%m-%d"]),
+      await inZone(zone, ["-d", "+1 day", "+%Y-%m-%d"]),
+      await inZone(zone, ["-d", "+2 day", "+%Y-%m-%d"])
+    ], zone);
+    assert.ok(report.sun.every(day => day.sunrise && day.sunset), zone);
+  }
+});
+
+test("a symlinked or FIFO cache is neither read nor written through", async t => {
+  const f = await fixture(t);
+  // Another file than the one MET sends, so a write through the link shows.
+  const victim = path.join(f.cache, "..", "victim.json");
+  const victimBody = forecast.replace('"air_temperature":12', '"air_temperature":-7');
+  assert.notEqual(victimBody, forecast);
+  await fs.writeFile(victim, victimBody);
+  await fs.symlink(victim, f.forecastPath);
+  const today = (await exec("date", ["+%Y-%m-%d"])).stdout.trim();
+  const cacheKey = path.basename(f.forecastPath).replace(/^forecast-complete-|\.json$/g, "");
+  const sunPath = path.join(f.cache, `sun-${cacheKey}-${today}.json`);
+  execFileSync("mkfifo", [sunPath]);
+  const unchanged = async () => {
+    assert.equal(await fs.readFile(victim, "utf8"), victimBody, "a write followed the link");
+    assert.ok((await fs.lstat(f.forecastPath)).isSymbolicLink(), "the link was replaced");
+    assert.ok((await fs.lstat(sunPath)).isFIFO(), "the FIFO was replaced");
+  };
+  // With MET down, the forecast behind the link is not shown as a cache.
+  f.responses.forecast.status = 503;
+  assert.deepEqual(await f.run(), { error: "Weather data is unavailable", values: [] });
+  await unchanged();
+  // Opening the FIFO to read or write would block the helper until the exec
+  // timeout fails the test.
+  // The reply of this run is not checked: a forecast that cannot be cached
+  // currently reads as unavailable.
+  f.responses.forecast.status = 200;
+  await f.run();
+  assert.deepEqual(f.requests.slice(0, 2), ["forecast", "forecast"], "the file behind the link was used as a cache");
+  await unchanged();
+  await fs.unlink(f.forecastPath);
+  const report = await f.run();
+  assert.equal(report.stale, false);
+  assert.ok(report.sun.every(day => day.sunrise && day.sunset), "the day of the FIFO comes from MET");
+  assert.ok((await fs.lstat(sunPath)).isFIFO(), "the FIFO was replaced");
 });
 
 test("sun caches older than eight days are pruned after the reply", async t => {
