@@ -3,8 +3,11 @@ harness), with the real helper against the loopback stand-in for Open-Meteo
 (tests/fakenet.py): a search cancelled by further typing must not report its
 own end (killed, no output) as a failed search, also when the new text trims
 to the same query (a trailing space), and the search that replaces it shows
-its results without an error. The query reaches the helper on stdin, never in
-its argv (read from /proc while the search runs).
+its results without an error. Enter saves the chosen place through the
+helper into an owner-only state file, which the service then reads. A search
+the server refuses says so. The query reaches the helper on stdin, never in
+its argv (read from /proc while the search runs), and the Norwegian display
+language asks for Norwegian place names.
 
   python3 tests/search-runtime.py
 
@@ -101,20 +104,39 @@ ShellRoot {
         shell.check(a.settingsError === "", "a cancelled search is not reported as failed: " + JSON.stringify(a.settingsError))
         shell.check(a.locationSuggestions.length === 1 && a.locationSuggestions[0].name === "Oslo",
           "the new search shows its results: " + JSON.stringify(a.locationSuggestions))
-        a.searchEdited("Bergen")
+        // Enter saves the result under the cursor through the helper.
+        a.commitLocation()
+        shell.check(a.savingLocation, "Enter starts saving the chosen place")
         shell.step++
         break
       case 3:
+        if (a.savingLocation || Weather.WeatherService.localLocationState.name !== "Oslo") return
+        shell.check(a.settingsError === "" && a.locationSuggestions.length === 0 && a.searchText === "",
+          "the saved place clears the search: " + JSON.stringify([a.settingsError, a.searchText]))
+        shell.check(Weather.WeatherService.localLocationState.latitude === 59.91273, "the service reads the saved place: "
+          + JSON.stringify(Weather.WeatherService.localLocationState))
+        a.searchEdited("Bergen")
+        shell.step++
+        break
+      case 4:
         // The Bergen search (the third request) is at the stand-in.
         if (!a.searching || shell.arrivals() < 3) return
         // Clearing the field cancels the search; its end changes nothing.
         a.searchEdited("")
         shell.step++
         break
-      case 4:
+      case 5:
         if (a.searching) return
         shell.check(a.settingsError === "" && a.locationSuggestions.length === 0 && !a.searchCompleted,
           "a search cancelled by clearing leaves no error or results: " + JSON.stringify(a.settingsError))
+        // The stand-in refuses this one at once (main() below).
+        a.searchEdited("Fail")
+        shell.step++
+        break
+      case 6:
+        if (a.searching || shell.arrivals() < 4 || a.settingsError === "") return
+        shell.check(a.settingsError === "Could not search for a location" && !a.searchCompleted,
+          "a refused search says so: " + JSON.stringify(a.settingsError))
         shell.finish()
       }
     }
@@ -147,10 +169,12 @@ def slow_search(handler):
     ARGVS.extend(helper_argvs())
     with ARRIVED.open("a") as log:
         log.write(handler.path + "\n")
-    time.sleep(SEARCH_DELAY)
-    body = fakenet.SEARCH.encode()
+    refused = "name=Fail&" in handler.path
+    if not refused:
+        time.sleep(SEARCH_DELAY)
+    body = b"{}" if refused else fakenet.SEARCH.encode()
     try:
-        handler.send_response(200)
+        handler.send_response(503 if refused else 200)
         handler.send_header("Content-Type", "application/json")
         handler.send_header("Content-Length", str(len(body)))
         handler.send_header("Connection", "close")
@@ -168,7 +192,10 @@ def main():
         ARRIVED = Path(certs_dir) / "arrived"
         shell = SHELL.replace("ARRIVED", json.dumps(str(ARRIVED)))
         with fakenet.Server(certs, {"search": slow_search}) as server:
-            run = harness.Run("4.5", shell, plugin=ROOT, prefix="foamy-weather-search-", system_bus="private")
+            # Norwegian (nb): the search must ask for Norwegian names (no).
+            run = harness.Run(
+                "4.5", shell, plugin=ROOT, prefix="foamy-weather-search-", system_bus="private", language="nb"
+            )
             connectivity = run.base / "connectivity"
             fake_nm.set_connectivity(connectivity, fake_nm.NONE)
             run.env = fakenet.network_env(run.env, server.port, certs["ca"])
@@ -178,10 +205,24 @@ def main():
             with fake_nm.start(run.system_bus_address, connectivity):
                 run.run(timeout=60)
             searches = server.paths("search")
+            saved = run.base / "home/.local/state/omarchy/settings/foamy-weather-location.json"
     checks = [line.split("FOAMY OK ", 1)[1] for line in run.log.splitlines() if "FOAMY OK " in line]
-    if run.ok and len(searches) != 3:
+    if run.ok and len(searches) != 4:
         run.ok = False
-        print(f"4.5: expected three searches at the stand-in, saw {searches}")
+        print(f"4.5: expected four searches at the stand-in, saw {searches}")
+    if run.ok and not all("&language=no&" in path for path in searches):
+        run.ok = False
+        print(f"4.5: a search did not ask for Norwegian names: {searches}")
+    # The helper is the only writer of the searched place: owner-only, exactly
+    # the chosen result (it exits 2 on any extra argument, so the place must
+    # have come on stdin).
+    if run.ok and (
+        not saved.exists()
+        or json.loads(saved.read_text()) != {"name": "Oslo", "latitude": 59.91273, "longitude": 10.74609}
+        or (saved.stat().st_mode & 0o777) != 0o600
+    ):
+        run.ok = False
+        print(f"4.5: the chosen place was not saved privately: {saved.read_text() if saved.exists() else 'missing'}")
     if run.ok and not any("geocode" in argv for argv in ARGVS):
         run.ok = False
         print(f"4.5: the search helper was not seen while it ran: {ARGVS}")

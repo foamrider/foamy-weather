@@ -16,7 +16,6 @@ import tempfile
 import time
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fakenet  # noqa: E402
 
@@ -53,7 +52,7 @@ class PrivateLocation(unittest.TestCase):
             certs["ca"],
         )
         # Sample a child's argv and its caller's (the helper's) before exec.
-        self.prefix = prefix = """#!/bin/bash
+        prefix = """#!/bin/bash
 set -euo pipefail
 for pid in "$BASHPID" "$PPID"; do
   if [[ -r /proc/$pid/cmdline ]]; then
@@ -227,138 +226,6 @@ done
             self.assertEqual(json.loads(result.stdout), {"error": "Could not search for a location"})
         self.assertEqual(len(self.server.log), requests, "an invalid query must not start a request")
         self.assertEqual(self.run_helper("geocode", ["extra"], check=False).returncode, 2)
-
-    def test_quickshell_sends_fresh_stdin_on_repeated_fetch_and_location_save(self):
-        # The test runs the host's Quickshell at /usr/bin/qs; CI runners have none.
-        if os.environ.get("FOAMY_TESTS_NO_QUICKSHELL") or not os.access("/usr/bin/qs", os.X_OK):
-            self.skipTest("Quickshell (/usr/bin/qs) is unavailable or not wanted (tests/suite.sh --ci)")
-        service = (ROOT / "WeatherService.qml").read_text()
-        panel = (ROOT / "Panel.qml").read_text()
-
-        def block(marker, start=0, qml=service):
-            begin = qml.index(marker, start)
-            end = qml.index("{", begin) + 1
-            depth = 1
-            while depth:
-                depth += (qml[end] == "{") - (qml[end] == "}")
-                end += 1
-            return qml[begin:end]
-
-        # Use the production launch functions and write handlers, with real helpers.
-        weather_started = block("onStarted:", service.index("weatherProc: Process {"))
-        save_started = block("onStarted:", panel.index("id: locationSaveProc"), panel)
-        # FoamyNative.command starts `bash -c 'exec …'` from PATH: sample the
-        # argv QML built.
-        bash = self.bin / "bash"
-        bash.write_text(self.prefix + 'exec /usr/bin/bash "$@"\n')
-        bash.chmod(0o755)
-        app = self.base / "app"
-        app.mkdir()
-        (app / "shell.qml").write_text(
-            """import QtQuick
-import Quickshell
-import Quickshell.Io
-import """
-            + json.dumps("file://" + str(ROOT / "kit/FoamyNative.js"))
-            + """ as FoamyNative
-import """
-            + json.dumps("file://" + str(ROOT / "Model.js"))
-            + """ as Model
-ShellRoot {
-  id: root
-  property bool networkReady: true
-  property bool hasCoordinates: true
-  property bool automaticLocation: false
-  property bool savingLocation: false
-  property bool loading: false
-  property string errorMessage: ""
-  property var errorValues: []
-  property int weatherGeneration: 0
-  property bool weatherRestart: false
-  property string configuredLocation: "Private Place"
-  property string coordinateQuery: "private"
-  property string requestUserAgent: ""
-  property var now
-  property var configuredLocationState: ({latitude:12.3456,longitude:-56.7890})
-  property var report: null
-  property bool saved: false
-  property int step: 0
-  property bool helperUnavailable: false
-  // The production launch: bin/$HOSTTYPE/foamy-weather-helper under this directory.
-  property string pluginDir: """
-            + json.dumps(str(ROOT))
-            + "\n"
-            + block("function setError(")
-            + "\n"
-            + block("function refresh(")
-            + "\n"
-            + block("function pickSuggestion(", 0, panel)
-            + """
-  Process {
-    id: weatherProc
-    property string requestInput: ""
-    property int generation: 0
-    property string query: ""
-    property string locationName: ""
-    """
-            + weather_started
-            + """
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.report = JSON.parse(text) }
-  }
-  Process {
-    id: locationSaveProc
-    property string requestInput: ""
-    """
-            + save_started
-            + """
-    onExited: function(code) { if (code !== 0) throw new Error("save failed"); root.saved = true }
-  }
-  Timer {
-    interval: 30; repeat: true; running: true
-    onTriggered: {
-      if (root.step === 0) { root.refresh(false); root.step = 1 }
-      else if (root.step < 3 && !weatherProc.running && root.report) {
-        if (root.report.error || root.report.sun.length !== 3) throw new Error("fetch failed")
-        if (root.step === 1) {
-          root.configuredLocationState = {latitude:8.7654,longitude:9.8765}
-          root.report = null; root.refresh(true); root.step = 2
-        } else {
-          root.pickSuggestion({name:"Pipe Town",latitude:8.7654,longitude:9.8765}); root.step = 3
-        }
-      } else if (root.step === 3 && root.saved) { console.log("PRIVATE PIPE PASS"); Qt.quit() }
-    }
-  }
-  Timer { interval: 10000; running: true; onTriggered: { console.log("PRIVATE PIPE TIMEOUT"); Qt.quit() } }
-}
-"""
-        )
-        runtime = self.base / "qt-runtime"
-        runtime.mkdir(mode=0o700)
-        env = dict(
-            self.env,
-            XDG_RUNTIME_DIR=str(runtime),
-            QT_QPA_PLATFORM="offscreen",
-            QT_QUICK_BACKEND="software",
-            QT_QPA_PLATFORMTHEME="",
-        )
-        for key in ["DISPLAY", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"]:
-            env.pop(key, None)
-        result = subprocess.run(
-            ["dbus-run-session", "--", "/usr/bin/qs", "-p", str(app), "--no-color"],
-            env=env,
-            text=True,
-            capture_output=True,
-            timeout=15,
-            check=True,
-        )
-        self.assertIn("PRIVATE PIPE PASS", result.stdout + result.stderr)
-        self.assertIn("lat=8.765&lon=9.87", self.urls())
-        saved = json.loads((self.base / "state/omarchy/settings/foamy-weather-location.json").read_text())
-        self.assertEqual(saved, {"name": "Pipe Town", "latitude": 8.7654, "longitude": 9.8765})
-        self.assert_private()
-        argv = self.audit.read_text()
-        self.assertNotIn("8.7654", argv)
-        self.assertNotIn("9.8765", argv)
 
 
 if __name__ == "__main__":
