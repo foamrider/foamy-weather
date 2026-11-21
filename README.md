@@ -279,7 +279,7 @@ bash tests/kit-check.sh
 python3 "$FOAMY_KIT/preview/i18n_runtime.py" .  # live language switching (foamy-kit's shared check)
 python3 tests/runtime.py                       # needs foamy-kit (FOAMY_KIT)
 python3 tests/search-runtime.py                # the location search; needs foamy-kit
-python3 tests/fetch-runtime.py                 # the forecast fetch across place changes; needs foamy-kit
+python3 tests/fetch-runtime.py                 # the fetch: place changes, failures, automatic location; needs foamy-kit
 python3 tests/sky-gpu.py                       # the sky on a GPU (eglfs on a render node); skips without one
 ```
 
@@ -288,7 +288,7 @@ The offscreen tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
 fetch-runtime.py set the network state through foamy-kit's fake
 NetworkManager (`preview/fake_nm.py`, on the run's private system bus; it
 needs dbus-python and PyGObject): offline, and for fetch-runtime.py online
-again.
+again (Limited, as behind a VPN).
 
 `preview/Preview.qml` renders mock states with the foamy-kit preview harness
 (`FOAMY_HOST_45=/usr/share/omarchy/shell <foamy-kit>/preview/render.py . --host 4.5`).
