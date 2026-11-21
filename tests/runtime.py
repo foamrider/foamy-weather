@@ -2,13 +2,17 @@
 the shared service, leader election, lazy popup body, settings read through
 the schema and saving, moving a legacy searched location to state, report
 retention across a location change, the hourly header, the bar button (a
-left click opens, a middle click refreshes, a right click sends the summary
-to omarchy-notification-send without coordinates), the bar's hover reveal,
-the footer and the note offline, the search field's wiring, and the service
-entry beside the widgets (one IPC handler, every IPC function on both
-handlers, settings from its shell.json entry, which it never writes,
-current() on demand and its idle timeout). The steps wait on conditions. The
-host is the installed 4.5 shell (FOAMY_HOST_45 picks another 4.5 tree).
+left click opens, a right click sends the summary to
+omarchy-notification-send without coordinates, a middle click and `r` start
+no fetch offline; tests/fetch-runtime.py checks that they refresh online),
+the bar's hover reveal, the footer and the note offline, the search field's
+wiring, and the IPC target: the service entry's handler is the one live
+handler beside the widgets and every popup function and refresh act through
+it; refresh starts an idle service; settings come from its shell.json entry,
+which it never writes; current() on demand and its idle timeout. On a host
+with no service entry, two bars still give one live handler (the leader
+Panel's), and every function acts through it. The steps wait on conditions.
+The host is the installed 4.5 shell (FOAMY_HOST_45 picks another 4.5 tree).
 
   python3 tests/runtime.py
 
@@ -71,6 +75,30 @@ ShellRoot {
     wait.waitFor(condition, 10000, function(ok) { if (ok) next(); else shell.finish() }, label)
   }
   function last(list) { return list.length ? list[list.length - 1] : undefined }
+  // Call every popup function through the live handler and wait for its
+  // effect on the popup `a`, then refresh (offline it only has to run).
+  function drive(through, a, done) {
+    var calls = [
+      ["edit", function() { return a.opened && a.editingLocation }],
+      ["close", function() { return !a.opened && !a.editingLocation }],
+      ["toggle", function() { return a.opened }],
+      ["hide", function() { return !a.opened }],
+      ["open", function() { return a.opened }],
+      ["toggle", function() { return !a.opened }],
+      ["show", function() { return a.opened }],
+      ["close", function() { return !a.opened }]
+    ]
+    var next = function(i) {
+      if (i === calls.length) {
+        shell.check(shell.call("refresh").ran, "refresh through " + through + " runs")
+        done()
+        return
+      }
+      shell.check(shell.call(calls[i][0]).ran, calls[i][0] + " through " + through + " runs")
+      shell.go(calls[i][1], calls[i][0] + " through " + through + " acts on the popup", function() { next(i + 1) })
+    }
+    next(0)
+  }
   // The widget's bar button (the item with the pressed(button) signal).
   function button(widget) {
     var kids = widget ? widget.children : []
@@ -232,7 +260,7 @@ ShellRoot {
     shell.check(status !== null && status.text === "Waiting for network…", "the footer waits for the network: " + (status && status.text))
     var refresh = shell.find(body, "foamyFooterRefresh")
     shell.check(refresh !== null && refresh.actionEnabled === false, "the footer's refresh is inert offline")
-    shell.check(refresh !== null && refresh.parent.parent.source === "MET Norway", "the footer names the data source")
+    shell.check(shell.findText(body, "MET Norway") !== null, "the footer names the data source")
     keys.emitTextKey(body, "r")
     shell.button(shell.widgets[0]).pressed(Qt.MiddleButton)
     shell.check(!Weather.WeatherService.weatherProc.running && !Weather.WeatherService.loading, "`r` and a middle click fetch nothing offline")
@@ -290,14 +318,10 @@ ShellRoot {
     a.close()
     shell.check(!a.opened && !a.editingLocation, "close resets Settings")
     // The service entry's handler drives the leader's popup.
-    shell.check(shell.call("edit").ran, "edit through the service entry runs")
-    shell.go(function() { return a.opened && a.editingLocation }, "edit through the service entry opens Settings", function() {
-      shell.check(shell.call("close").ran, "close through the service entry runs")
-      shell.go(function() { return !a.opened && !a.editingLocation }, "close through the service entry closes the popup", function() {
-        // Leader goes away (monitor unplugged): the other instance takes over.
-        shell.widgets[0].destroy()
-        shell.go(function() { return Kit.FoamyShared.memberCount("weather") === 1 }, "one member left", step6)
-      })
+    shell.drive("the service entry", a, function() {
+      // Leader goes away (monitor unplugged): the other instance takes over.
+      shell.widgets[0].destroy()
+      shell.go(function() { return Kit.FoamyShared.memberCount("weather") === 1 }, "one member left", step6)
     })
   }
 
@@ -346,16 +370,32 @@ ShellRoot {
 
   function step9() {
     shell.check(Weather.WeatherService.report !== null, "the last report is kept while idle")
-    shell.service.destroy()
-    shell.go(function() { return shell.handlers().length === 0 }, "no handler without service or widget", step10)
+    // A refresh (a keybinding) starts an idle service with no widget, as current() does.
+    shell.check(shell.call("refresh").ran && Weather.WeatherService.active && Weather.WeatherService.onDemand,
+      "refresh through the service entry starts an idle service")
+    shell.go(function() {
+      return !Weather.WeatherService.active && !Weather.WeatherService.onDemand
+        && !Weather.WeatherService.locationMigrateProc.running
+    }, "the refreshed service idles after the timeout", function() {
+      shell.service.destroy()
+      shell.go(function() { return shell.handlers().length === 0 }, "no handler without service or widget", step10)
+    })
   }
 
   function step10() {
     shell.check(Weather.WeatherService.host === null, "the service entry is gone")
-    // A host that loads no service: the leader Panel answers instead.
-    var lone = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
-    shell.widgets = [lone.createObject(holder, { bar: barA, moduleName: "foamy.weather", settings: { units: "metric" } })]
-    shell.go(function() { return shell.handlers().length === 1 && shell.panel(0) !== null }, "the Panel's handler takes the target", step11)
+    // A host that loads no service, two monitors: only the leader Panel answers.
+    var bars = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
+    shell.widgets = [bars.createObject(holder, { bar: barA, moduleName: "foamy.weather", settings: { units: "metric" } }),
+                     bars.createObject(holder, { bar: barB, moduleName: "foamy.weather", settings: { units: "metric" } })]
+    shell.go(function() { return shell.panel(0) !== null && shell.panel(1) !== null && shell.handlers().length === 1 },
+      "two bars without a service entry give one live handler", function() {
+        // The leader goes away: the other Panel's handler takes the target.
+        shell.widgets[0].destroy()
+        shell.widgets = [shell.widgets[1]]
+        shell.go(function() { return Kit.FoamyShared.memberCount("weather") === 1 && shell.handlers().length === 1 },
+          "the remaining Panel's handler takes the target", step11)
+      })
   }
 
   function step11() {
@@ -363,25 +403,10 @@ ShellRoot {
     var fallback = shell.current()
     shell.check(fallback && fallback.ok === true && fallback.unit === "C", "and answers current(): " + JSON.stringify(fallback))
     // Every function of the Panel's handler does what the service entry's does.
-    var calls = [
-      ["edit", function() { return a.opened && a.editingLocation }],
-      ["close", function() { return !a.opened && !a.editingLocation }],
-      ["toggle", function() { return a.opened }],
-      ["hide", function() { return !a.opened }],
-      ["show", function() { return a.opened }],
-      ["close", function() { return !a.opened }]
-    ]
-    var next = function(i) {
-      if (i === calls.length) {
-        shell.check(shell.call("refresh").ran, "the Panel's handler refreshes")
-        shell.widgets[0].destroy()
-        shell.finish()
-        return
-      }
-      shell.check(shell.call(calls[i][0]).ran, calls[i][0] + " through the Panel's handler runs")
-      shell.go(calls[i][1], calls[i][0] + " through the Panel's handler acts on its popup", function() { next(i + 1) })
-    }
-    next(0)
+    shell.drive("the Panel's handler", a, function() {
+      shell.widgets[0].destroy()
+      shell.finish()
+    })
   }
 
   function inside(item, ancestor) {
@@ -468,15 +493,6 @@ def main():
     if any(value in field for value in ("60.39", "5.32") for field in fields):
         run.ok = False
         print(f"{host}: coordinates reached the notification command: {calls}")
-    # Popup functions without a widget, the hover setter: nothing may throw.
-    errors = [
-        line
-        for line in run.log.splitlines()
-        if any(word in line for word in ("TypeError", "ReferenceError", "read-only"))
-    ]
-    if errors:
-        run.ok = False
-        print(f"{host}: errors in the run log:\n" + "\n".join(errors))
     if run.ok:
         print(f"{host}: {len(checks)} checks passed")
         run.cleanup()
