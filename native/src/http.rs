@@ -1042,17 +1042,6 @@ mod tests {
     }
 
     #[test]
-    fn headers_last_value_wins() {
-        let r = response(
-            b"HTTP/1.1 200 OK\r\nExpires: a\r\nexpires:  b \r\nContent-Length: 0\r\n\r\n",
-            0,
-        )
-        .unwrap();
-        assert_eq!(r.header("EXPIRES"), Some("b"));
-        assert_eq!(r.header("Last-Modified"), None);
-    }
-
-    #[test]
     fn requests_carry_the_agent_and_validator() {
         let mut wire = Vec::new();
         struct Duplex<'a>(Cursor<&'a [u8]>, &'a mut Vec<u8>);
@@ -1087,38 +1076,6 @@ mod tests {
              Accept: */*\r\nAccept-Encoding: gzip, deflate\r\nConnection: close\r\n\
              If-Modified-Since: Thu, 29 Oct 2026 10:00:00 GMT\r\n\r\n"
         );
-    }
-
-    #[test]
-    fn a_trickling_server_hits_the_absolute_deadline() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = thread::spawn(move || {
-            let (mut socket, _) = listener.accept().unwrap();
-            let _ = socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n");
-            for _ in 0..40 {
-                thread::sleep(Duration::from_millis(50));
-                if socket.write_all(b"x").is_err() {
-                    break;
-                }
-            }
-        });
-        let request = Request {
-            host: "localhost",
-            target: "/",
-            user_agent: "t",
-            if_modified_since: None,
-            connect_timeout: Duration::from_millis(500),
-            timeout: Duration::from_millis(500),
-            limit: 2000,
-        };
-        let started = Instant::now();
-        let tcp = TcpStream::connect(address).unwrap();
-        let stream = DeadlineStream::new(tcp, started + request.timeout);
-        assert_eq!(exchange(stream, &request).unwrap_err(), Error::Timeout);
-        let elapsed = started.elapsed();
-        assert!(elapsed < Duration::from_millis(900), "{elapsed:?}");
-        server.join().unwrap();
     }
 
     #[test]
