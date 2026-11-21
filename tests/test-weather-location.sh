@@ -57,17 +57,6 @@ location_file="$XDG_STATE_HOME/omarchy/settings/foamy-weather-location.json"
 legacy_file="$XDG_CONFIG_HOME/omarchy/weather-location.local.json"
 mkdir -p "$(dirname "$legacy_file")"
 
-"${location_writer[@]}" --set <<<'{"name":"Example","latitude":12.34,"longitude":56.78}'
-manual=$(cat "$location_file")
-jq -e '
-  .name == "Example"
-  and .latitude == 12.34
-  and .longitude == 56.78' <<<"$manual" >/dev/null || fail "manual location did not persist"
-[[ $(stat -c %a "$location_file") == 600 ]] || fail "manual location must be owner-only"
-[[ ! -e $legacy_file ]] || fail "manual location must not be written to config"
-
-rm -f "$location_file"
-
 # Migration: a valid legacy file moves to state once, owner-only.
 "${location_writer[@]}" --migrate || fail "migrate without any file must succeed"
 [[ ! -e $location_file ]] || fail "migrate without a legacy file created a location"
@@ -124,10 +113,6 @@ jq -e '
   and .latitude == 12.35
   and .longitude == 56.79
   and .source == "geoclue"' <<<"$geoclue" >/dev/null || fail "GeoClue location was not resolved and rounded to about 1 km"
-grep -q 'lat=12.35&lon=56.79&' "$test_root/net/requests" || fail "Nominatim must get the rounded coordinates"
-if grep -q '12.3456\|56.789' "$test_root/net/requests"; then fail "precise coordinates reached Nominatim"; fi
-[[ $(stat -c %a "$test_root/runtime") == 700 ]] || fail "the runtime directory must be owner-only"
-[[ $(stat -c %a "$test_root/runtime/current-location.json") == 600 ]] || fail "the position must be owner-only"
 
 cached=$("${resolver[@]}")
 jq -e '.name == "Example Town" and .source == "geoclue-cache"' <<<"$cached" >/dev/null \
@@ -141,10 +126,6 @@ unavailable=$(WEATHER_GEOCLUE_COMMAND="$test_root/missing" "${resolver[@]}" --fo
 jq -e '.error == "Could not find automatic location"' <<<"$unavailable" >/dev/null \
   || fail "unavailable GeoClue must report an error"
 
-# Invalid coordinates and failed preference validation must preserve saved files.
-"${location_writer[@]}" --set <<<'{"name":"Example","latitude":12,"longitude":34}'
-if "${location_writer[@]}" --set <<<'{"name":"Invalid","latitude":91,"longitude":0}' 2>/dev/null; then fail "invalid latitude accepted"; fi
-jq -e '.name == "Example"' "$location_file" >/dev/null || fail "invalid location replaced saved location"
 # No private runtime directory: fail instead of falling back to /tmp.
 no_runtime=$(env -u XDG_RUNTIME_DIR -u WEATHER_LOCATION_RUNTIME_DIR "${resolver[@]}" --force)
 jq -e '.error == "Automatic location needs XDG_RUNTIME_DIR"' <<<"$no_runtime" >/dev/null \

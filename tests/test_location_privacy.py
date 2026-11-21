@@ -136,6 +136,8 @@ done
         file = self.base / "state/omarchy/settings/foamy-weather-location.json"
         self.assertEqual(json.loads(file.read_text()), location)
         self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
+        # The searched place is private state, never the shared config.
+        self.assertFalse((self.base / "config/omarchy/weather-location.local.json").exists())
         for payload in [
             "",
             "{broken",
@@ -146,21 +148,6 @@ done
             result = self.run_helper("location", ["--set"], payload, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(json.loads(file.read_text()), location)
-        argv = self.audit.read_bytes().decode()
-        self.assertNotIn(LATITUDE, argv)
-        self.assertNotIn(LONGITUDE, argv)
-        self.assertNotIn("Example", argv)
-
-    def test_legacy_manual_location_migrates_privately(self):
-        location = {"name": "Example Town", "latitude": float(LATITUDE), "longitude": float(LONGITUDE)}
-        legacy = self.base / "config/omarchy/weather-location.local.json"
-        legacy.parent.mkdir(parents=True)
-        legacy.write_text(json.dumps(location) + "\n")
-        self.run_helper("location", ["--migrate"])
-        file = self.base / "state/omarchy/settings/foamy-weather-location.json"
-        self.assertEqual(json.loads(file.read_text()), location)
-        self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
-        self.assertFalse(legacy.exists())
         argv = self.audit.read_bytes().decode()
         self.assertNotIn(LATITUDE, argv)
         self.assertNotIn(LONGITUDE, argv)

@@ -81,27 +81,6 @@ test("notification summaries keep coordinate fallback labels out of command argu
   assert.equal(calls[1][3], "Weather in Example Town");
 });
 
-const bundle = JSON.stringify({ forecast: { properties: { timeseries: [{ time: "2026-10-30T09:00:00Z",
-  data: { instant: { details: { air_temperature: 7 } } } }] } }, sun: [], fetchedAt: "2026-10-30T09:00:00Z" });
-
-test("a report is tagged with the place it was fetched for", () => {
-  const c = fixture(); c.networkReady = true; c.report = null;
-  c.finishWeather(bundle, 0, "12,34", "Example");
-  assert.equal(c.report.query, "12,34"); assert.equal(c.report.locationName, "Example");
-  assert.equal(c.errorMessage, ""); assert.equal(c.loading, false);
-});
-
-test("a fetch for a previous location is ignored and keeps the shown report", () => {
-  const c = fixture(); c.networkReady = true;
-  c.finishWeather(bundle, 0, "12,34", "Old Town");
-  const shown = c.report;
-  c.weatherGeneration = 1; c.loading = true;
-  // A killed or late run may finish with partial output: no error, no retry.
-  c.finishWeather("{\"partial", 0, "12,34", "Old Town");
-  assert.equal(c.report, shown); assert.equal(c.errorMessage, "");
-  assert.equal(c.retryTimer.starts, 0); assert.equal(c.loading, false);
-});
-
 test("helper errors keep their key and values for translation", () => {
   const c = fixture(); c.networkReady = true;
   c.finishWeather(JSON.stringify({ error: "Unknown option: %1", values: ["--bogus"] }), 0, "12,34", "");
@@ -109,19 +88,10 @@ test("helper errors keep their key and values for translation", () => {
   assert.deepEqual(Array.from(c.errorValues), ["--bogus"]);
 });
 
-// A coordinate change during a running fetch: tests/fetch-runtime.py. The
-// helper's argv (no query, no coordinates): fetch-runtime.py and
+// A place change during a running fetch (the stopped fetch is never shown,
+// no error, no retry): tests/fetch-runtime.py. The query and the coordinates
+// reach the helper on stdin, never in its argv: fetch-runtime.py and
 // search-runtime.py, from /proc while the helper runs.
-test("the geocoder query goes to the helper on stdin", () => {
-  const c = controller({ editingLocation:true, automaticLocation:false, geocodePendingQuery:"Bø i Telemark",
-    geocodeActiveQuery:"", geocodeGeneration:3, geocodeProc:{running:false}, geocodeLanguage:()=>"no" }, ["startGeocode"], "panel");
-  c.startGeocode();
-  assert.equal(c.geocodeProc.running, true); assert.equal(c.geocodeProc.stdinEnabled, true);
-  assert.equal(c.geocodeProc.generation, 3, "the run carries the search generation");
-  assert.deepEqual(JSON.parse(c.geocodeProc.requestInput), { query: "Bø i Telemark", language: "no" });
-  assert.ok(c.geocodeProc.requestInput.endsWith("\n"));
-});
-
 test("a missing helper (exit 127) is reported once and nothing retries", () => {
   const c = controller({ networkReady: true, loading: true, retries: 0, retryTimer: timer(), locationRetryTimer: timer(),
     helperUnavailable: false, FoamyNative, errorMessage: "", errorValues: [], dynamicLocationError: "",

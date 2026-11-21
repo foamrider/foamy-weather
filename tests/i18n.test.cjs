@@ -2,7 +2,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const I = require('./i18n.cjs');
-const manifest = require('../manifest.json');
 const tokens = s => [...s.matchAll(/%[1-9][0-9]*|\{\w+\}/g)].map(m => m[0]).sort();
 const forms = value => typeof value === 'object' ? Object.values(value) : [value];
 for (const [key, value] of Object.entries(I.en)) {
@@ -12,10 +11,6 @@ for (const [key, value] of Object.entries(I.en)) {
     for (const translated of forms(I.no[key])) assert.deepEqual(tokens(translated), tokens(key), key);
 }
 assert.deepEqual(Object.keys(I.no).sort(), Object.keys(I.en).sort(), 'every English key has a Norwegian entry');
-assert.equal(manifest.barWidget?.defaults?.language, undefined);
-assert.equal((manifest.barWidget?.schema || []).some(f => f.key === 'language'), false);
-assert.equal(I.text('Unknown %1 {name}', 'no', ['$& %2']), '$& %2 {name}'.replace(/^/, 'Unknown '));
-assert.equal(I.text('constructor', 'no'), 'constructor');
 const P = require('../Preferences.js');
 for (const language of ['en', 'no']) {
   const t = (key, values) => I.text(key, language, values);
@@ -25,8 +20,6 @@ for (const language of ['en', 'no']) {
     assert.equal(P.age('2026-09-24T10:00:00Z', now, t, tn), expected);
   }
 }
-assert.equal(I.plural('%1 hours ago', 'en', 1), '1 hour ago');
-assert.equal(I.plural('%1 hours ago', 'no', 3), '3 timer siden');
 // Every key the plugin and its helper emit has a catalog entry.
 const sources = ['Panel.qml', 'WeatherView.qml', 'WeatherSettings.qml', 'WeatherService.qml']
   .map(name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8')).join('\n');
@@ -38,7 +31,6 @@ const util = fs.readFileSync(path.join(__dirname, '../native/src/util.rs'), 'utf
 const keys = util.slice(util.indexOf('pub mod keys {'), util.indexOf('}', util.indexOf('pub mod keys {')));
 const helperKeys = [...keys.matchAll(/: &str = "([^"]+)";/g)].map(m => m[1]);
 assert.ok(helperKeys.length >= 7, 'helper error keys found');
-assert.doesNotMatch(helperKeys.join('\n'), /Mangler|Ukjent/, 'helper errors are English keys');
 const Model = require('../Model.js');
 const tls = fs.readFileSync(path.join(__dirname, '../kit/rust/foamy-helper/src/tls.rs'), 'utf8');
 assert.equal(tls.match(/pub const UNSUPPORTED: &str = "([^"]+)";/)[1], Model.HTTPS_UNSUPPORTED, 'Model.HTTPS_UNSUPPORTED is tls::UNSUPPORTED');

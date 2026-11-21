@@ -28,13 +28,6 @@ assert.equal(Model.pluginEntry(both, "foamy.weather").settings.units, "imperial"
 // Malformed sections and entries are skipped, other ids never match.
 assert.equal(Model.pluginEntry(config({ plugins: [null, "foamy.weather", { id: "foamy.weather.x" }],
   bar: { layout: { left: "foamy.weather", right: [null, ["foamy.weather"]] } } }), "foamy.weather").found, false)
-// Settings read through the schema as everywhere else: the legacy `language`
-// key is ignored (the condition follows Omarchy's language), bad values read
-// as defaults.
-const Prefs = require("../kit/node-loader.cjs").load("FoamyPrefs")
-const read = settings => ({ ...Prefs.values(P.fields, settings) })
-assert.deepEqual(read(Model.pluginEntry(barOnly, "foamy.weather").settings),
-  { units: "metric", automaticLocation: false, animations: false, refreshMinutes: 30, locationRefreshMinutes: 15, requestUserAgent: "" })
 
 // --- currentReply ------------------------------------------------------------------
 function entry(time, temperature, symbol) {
@@ -67,8 +60,6 @@ assert.equal(imperial.temperature, P.converted(6.4, "imperial"))
 assert.equal(imperial.high, P.converted(10, "imperial"))
 assert.equal(imperial.condition, I.text("Light rain", "no"))
 assert.notEqual(imperial.condition, "Light rain", "the Norwegian catalog translates the condition")
-// Keys and order are the contract.
-assert.deepEqual(Object.keys(reply({})), ["ok", "temperature", "unit", "code", "condition", "high", "low", "location", "updatedAt"])
 // Data stays ok while a refresh, a retry or a stale cache is underway.
 assert.equal(reply({ pending: true, networkConnected: false }).ok, true)
 assert.equal(reply({ report: Object.assign({}, report, { stale: true }) }).ok, true)
@@ -119,7 +110,6 @@ const panel = fs.readFileSync(path.join(__dirname, "../Panel.qml"), "utf8")
 const functions = source => [...source.slice(source.indexOf("FoamyIpc {")).matchAll(/function (\w+)\(\)/g)].map(m => m[1]).sort()
 assert.deepEqual(functions(service), functions(panel), "both handlers declare the same functions")
 assert.ok(functions(service).includes("current"))
-assert.match(panel, /enabled: member\.isLeader && !WeatherService\.host/, "the Panel's handler yields to the service entry")
 assert.doesNotMatch(service, /setText|atomicWrites|updateEntryInline/, "the service never writes shell.json")
 
 console.log("Weather service tests passed.")

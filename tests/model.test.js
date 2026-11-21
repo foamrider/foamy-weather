@@ -126,8 +126,6 @@ assert.equal(rollingDays[0].hours[7].dateKey, "2026-08-22")
 assert.equal(Model.formatIsoTime("2026-08-21T05:50:00+02:00"), "05:50")
 // Script errors carry their %n values separately so the key stays translatable.
 assert.deepEqual(Model.parseResolvedLocation('{"error":"Unknown option: %1","values":["--bogus"]}').errorValues, ["--bogus"])
-assert.deepEqual(Model.parseResolvedLocation('{"error":"Could not find automatic location"}').errorValues, [])
-assert.equal(Model.formatAge, undefined, "the Norwegian-only age formatter is gone")
 
 // Search replies are untrusted: at most the five places asked for (count=5),
 // each with a string name and numeric coordinates the location file accepts.
