@@ -8,7 +8,8 @@ helper into an owner-only state file, which the service then reads. A search
 the server refuses says so. The query reaches the helper on stdin, never in
 its argv (read from /proc while the search runs), and the Norwegian display
 language asks for Norwegian place names. A cancelled search whose helper
-is still exiting when the next search is due does not lose that search.
+is still exiting when the next search is due does not lose that search, and
+text typed before that helper exits replaces the queued search.
 
   python3 tests/search-runtime.py
 
@@ -150,10 +151,12 @@ ShellRoot {
 
 # The same search, typed again (a trailing space) while the first search
 # still runs, through a helper that is slow to stop: stopped, it exits only
-# when the shell creates RELEASE. RELEASE comes from a timer started with the
-# typing and three times as long as the Panel's 300 ms search delay; Qt fires
-# timers in deadline order, so the delayed search is due while the stopped
-# helper still runs.
+# when the shell writes a line to the RELEASE FIFO. The release comes from a
+# timer started with the typing and longer than the Panel's 300 ms search
+# delay; Qt fires timers in deadline order, so the delayed search is due
+# while the stopped helper still runs. Then once more, but with new text
+# typed after the delayed search was queued and before the stopped helper
+# exits: only the new text may be searched.
 SLOW_STOP_SHELL = r"""
 import QtQuick
 import Quickshell
@@ -177,10 +180,20 @@ ShellRoot {
   Item { id: holder }
   FileView { id: arrived; path: ARRIVED; blockLoading: true; printErrors: false }
   function arrivals() { arrived.reload(); return arrived.text().split("\n").length - 1 }
+  function lastArrival() { arrived.reload(); var lines = arrived.text().split("\n"); return lines[lines.length - 2] || "" }
   FileView { id: stopping; path: STOPPING; blockLoading: true; printErrors: false }
   function stopped() { stopping.reload(); return stopping.text().length > 0 }
-  Process { id: release; command: ["touch", RELEASE] }
+  Process { id: release; command: ["sh", "-c", "echo release >\"$1\"", "sh", RELEASE] }
   Timer { id: releaseLater; interval: 900; onTriggered: release.running = true }
+  Timer {
+    id: retypeLater
+    interval: 600
+    onTriggered: {
+      shell.widget.panel.searchEdited("Bergen")
+      release.running = true
+      shell.step++
+    }
+  }
 
   Component.onCompleted: {
     var component = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
@@ -225,6 +238,23 @@ ShellRoot {
         shell.check(shell.arrivals() === 2, "one delayed search reached the stand-in: " + shell.arrivals())
         shell.check(a.settingsError === "" && a.locationSuggestions.length === 1 && a.locationSuggestions[0].name === "Oslo",
           "the delayed search shows its results: " + JSON.stringify([a.settingsError, a.locationSuggestions]))
+        a.searchEdited("Trondheim")
+        shell.step++
+        break
+      case 4:
+        if (!a.searching || shell.arrivals() < 3) return
+        // retypeLater queues this search behind the stopped helper, types
+        // Bergen and then releases the helper.
+        a.searchEdited("Trondheim ")
+        retypeLater.start()
+        shell.step++
+        break
+      case 5:
+        return
+      case 6:
+        if (a.searching || !a.searchCompleted || !/[?&]name=Bergen&/.test(shell.lastArrival())) return
+        arrived.reload()
+        shell.check(shell.arrivals() === 4, "only the newly typed text was searched: " + JSON.stringify(arrived.text()))
         shell.finish()
       }
     }
@@ -233,19 +263,19 @@ ShellRoot {
 """
 
 # Runs the real helper; stopped while it runs geocode, it ends the real
-# helper and then waits for the release file (at most 20 s).
+# helper and then waits for a line on the release FIFO (at most 20 s).
 SLOW_STOP_HELPER = """#!/bin/bash
 real=(REAL)
 [[ ${1-} == geocode ]] || exec "${real[@]}" "$@"
-"${real[@]}" "$@" <&0 &
+# Read-write, so that the open does not wait for a writer, and the shell's
+# writer never waits for a reader.
+exec 3<>RELEASE
+"${real[@]}" "$@" <&0 3<&- &
 child=$!
 stopped() {
   kill "$child" 2>/dev/null
   echo stopped >STOPPING
-  for ((i = 0; i < 400; i++)); do
-    [[ -e RELEASE ]] && exit 143
-    sleep 0.05
-  done
+  read -r -t 20 -u 3 _ || true
   exit 143
 }
 trap stopped TERM
@@ -306,6 +336,7 @@ def slow_stop(certs, certs_dir):
     work.mkdir()
     ARRIVED = work / "arrived"
     stopping, release = work / "stopping", work / "release"
+    os.mkfifo(release, 0o600)
     # The plugin with the stand-in in place of its helper.
     plugin = work / "plugin"
     plugin.mkdir()
