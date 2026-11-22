@@ -84,15 +84,16 @@ The service only reads `shell.json`.
 | `temperature`, `high`, `low` | Whole degrees in `unit`; `high`/`low` are today's range (`null` when unknown) |
 | `unit` | `"C"` (`units: "metric"`) or `"F"` (`"imperial"`) |
 | `code` | MET Norway's symbol code (`[a-z0-9_]`, at most 48 characters, such as `partlycloudy_night`); anything else reads as `cloudy` |
-| `condition` | The condition in the shell's language (Omarchy → Setup → Language), at most 64 characters |
-| `location` | The forecast's place name, at most 80 characters (show it only if your user wants it) |
+| `condition` | The condition in the shell's language (Omarchy → Setup → Language), at most 64 UTF-16 code units (JavaScript length) |
+| `location` | The forecast's place name, at most 80 UTF-16 code units (show it only if your user wants it) |
 | `updatedAt` | When the forecast was downloaded, UTC ISO 8601 (`""` when unknown); the data may be hours old when MET or the network is unavailable |
 
 `reason` is `pending` (starting, loading, retrying or resolving the automatic
 location: ask again in a few seconds), `no-location` (no place chosen, or
 automatic location failed), `offline`, `unsupported` (no helper or HTTPS for
 this CPU) or `error` (the download failed). Strings are single-line plain
-text. A cold start answers `pending` for about 2 seconds while the network
+text, without direction formatting characters. A cold start answers
+`pending` for about 2 seconds while the network
 settles, then until the download ends: usually a second or two, at most
 about 35 seconds when MET is slow (10 s for the forecast, then up to 8 s for
 each of three sunrise requests). The sunrise requests stop at the first one

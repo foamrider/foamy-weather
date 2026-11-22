@@ -122,6 +122,25 @@ requests=$(wc -l <"$test_root/net/requests")
 "${resolver[@]}" --force >/dev/null
 [[ $(wc -l <"$test_root/net/requests") == "$requests" ]] || fail "a cached place name was requested again"
 
+# Caches dated in the future (the clock was set back) have no known age:
+# GeoClue is asked again for the position and Nominatim for the place name.
+position_cache="$WEATHER_LOCATION_RUNTIME_DIR/current-location.json"
+printf '%s\n' '{"name":"Old Place","latitude":1.00,"longitude":2.00,"source":"geoclue"}' >"$position_cache"
+touch -d tomorrow "$position_cache"
+future_position=$("${resolver[@]}")
+jq -e '.name == "Example Town" and .latitude == 12.35 and .source == "geoclue"' <<<"$future_position" >/dev/null \
+  || fail "a position cache dated in the future was used: $future_position"
+label_cache="$XDG_CACHE_HOME/omarchy-weather/location-$(printf '%s' 12.35_56.79 | sha256sum | cut -d' ' -f1).json"
+[[ -f $label_cache ]] || fail "the place name was not cached at $label_cache"
+printf '%s\n' '{"name":"Old Label"}' >"$label_cache"
+touch -d tomorrow "$label_cache"
+requests=$(wc -l <"$test_root/net/requests")
+future_label=$("${resolver[@]}" --force)
+jq -e '.name == "Example Town"' <<<"$future_label" >/dev/null \
+  || fail "a place name cache dated in the future was used: $future_label"
+[[ $(wc -l <"$test_root/net/requests") == $((requests + 1)) ]] \
+  || fail "a place name cache dated in the future did not ask Nominatim"
+
 unavailable=$(WEATHER_GEOCLUE_COMMAND="$test_root/missing" "${resolver[@]}" --force)
 jq -e '.error == "Could not find automatic location"' <<<"$unavailable" >/dev/null \
   || fail "unavailable GeoClue must report an error"

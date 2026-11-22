@@ -7,7 +7,9 @@ its results without an error. Enter saves the chosen place through the
 helper into an owner-only state file, which the service then reads. A search
 the server refuses says so. The query reaches the helper on stdin, never in
 its argv (read from /proc while the search runs), and the Norwegian display
-language asks for Norwegian place names.
+language asks for Norwegian place names. A cancelled search whose helper
+is still exiting when the next search is due does not lose that search, and
+text typed before that helper exits replaces the queued search.
 
   python3 tests/search-runtime.py
 
@@ -18,6 +20,8 @@ Temporary HOME/XDG dirs; nothing is sent to the real services.
 
 import json
 import os
+import platform
+import shlex
 import sys
 import tempfile
 import time
@@ -145,6 +149,140 @@ ShellRoot {
 """
 
 
+# The same search, typed again (a trailing space) while the first search
+# still runs, through a helper that is slow to stop: stopped, it exits only
+# when the shell writes a line to the RELEASE FIFO. The release comes from a
+# timer started with the typing and longer than the Panel's 300 ms search
+# delay; Qt fires timers in deadline order, so the delayed search is due
+# while the stopped helper still runs. Then once more, but with new text
+# typed after the delayed search was queued and before the stopped helper
+# exits: only the new text may be searched.
+SLOW_STOP_SHELL = r"""
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import "harness"
+import "plugin" as Weather
+
+ShellRoot {
+  id: shell
+  property int failures: 0
+  property int step: 0
+  property var widget: null
+  property real started: Date.now()
+  function check(ok, what) { if (!ok) { failures++; console.log("FOAMY FAIL " + what) } else console.log("FOAMY OK " + what) }
+  function finish() {
+    console.log(shell.failures === 0 ? "FOAMY DONE" : "FOAMY FAIL " + shell.failures + " failures")
+    Qt.quit()
+  }
+
+  MockBar { id: bar }
+  Item { id: holder }
+  FileView { id: arrived; path: ARRIVED; blockLoading: true; printErrors: false }
+  function arrivals() { arrived.reload(); return arrived.text().split("\n").length - 1 }
+  function lastArrival() { arrived.reload(); var lines = arrived.text().split("\n"); return lines[lines.length - 2] || "" }
+  FileView { id: stopping; path: STOPPING; blockLoading: true; printErrors: false }
+  function stopped() { stopping.reload(); return stopping.text().length > 0 }
+  Process { id: release; command: ["sh", "-c", "echo release >\"$1\"", "sh", RELEASE] }
+  Timer { id: releaseLater; interval: 900; onTriggered: release.running = true }
+  Timer {
+    id: retypeLater
+    interval: 600
+    onTriggered: {
+      shell.widget.panel.searchEdited("Bergen")
+      release.running = true
+      shell.step++
+    }
+  }
+
+  Component.onCompleted: {
+    var component = Qt.createComponent(Qt.resolvedUrl("plugin/BarWidget.qml"))
+    if (component.status !== Component.Ready) { console.log("FOAMY FAIL load " + component.errorString()); Qt.quit(); return }
+    widget = component.createObject(holder, { bar: bar, moduleName: "foamy.weather", settings: { id: "foamy.weather" } })
+    tick.start()
+  }
+
+  Timer {
+    id: tick
+    interval: 50
+    repeat: true
+    onTriggered: {
+      var a = shell.widget ? shell.widget.panel : null
+      if (Date.now() - shell.started > 40000) {
+        shell.check(false, "timed out at step " + shell.step + ": searching " + (a && a.searching)
+          + ", arrivals " + shell.arrivals() + ", error " + JSON.stringify(a && a.settingsError))
+        shell.finish()
+        return
+      }
+      if (!a) return
+      switch (shell.step) {
+      case 0:
+        a.startEditingLocation()
+        a.searchEdited("Oslo")
+        shell.step++
+        break
+      case 1:
+        if (!a.searching || shell.arrivals() < 1) return
+        a.searchEdited("Oslo ")
+        releaseLater.start()
+        shell.step++
+        break
+      case 2:
+        // The stand-in got the stop and waits for RELEASE.
+        if (!shell.stopped()) return
+        shell.step++
+        break
+      case 3:
+        // The delayed search has reached the stand-in and ended.
+        if (a.searching || !a.searchCompleted || shell.arrivals() < 2) return
+        shell.check(shell.arrivals() === 2, "one delayed search reached the stand-in: " + shell.arrivals())
+        shell.check(a.settingsError === "" && a.locationSuggestions.length === 1 && a.locationSuggestions[0].name === "Oslo",
+          "the delayed search shows its results: " + JSON.stringify([a.settingsError, a.locationSuggestions]))
+        a.searchEdited("Trondheim")
+        shell.step++
+        break
+      case 4:
+        if (!a.searching || shell.arrivals() < 3) return
+        // retypeLater queues this search behind the stopped helper, types
+        // Bergen and then releases the helper.
+        a.searchEdited("Trondheim ")
+        retypeLater.start()
+        shell.step++
+        break
+      case 5:
+        return
+      case 6:
+        if (a.searching || !a.searchCompleted || !/[?&]name=Bergen&/.test(shell.lastArrival())) return
+        arrived.reload()
+        shell.check(shell.arrivals() === 4, "only the newly typed text was searched: " + JSON.stringify(arrived.text()))
+        shell.finish()
+      }
+    }
+  }
+}
+"""
+
+# Runs the real helper; stopped while it runs geocode, it ends the real
+# helper and then waits for a line on the release FIFO (at most 20 s).
+SLOW_STOP_HELPER = """#!/bin/bash
+real=(REAL)
+[[ ${1-} == geocode ]] || exec "${real[@]}" "$@"
+# Read-write, so that the open does not wait for a writer, and the shell's
+# writer never waits for a reader.
+exec 3<>RELEASE
+"${real[@]}" "$@" <&0 3<&- &
+child=$!
+stopped() {
+  kill "$child" 2>/dev/null
+  echo stopped >STOPPING
+  read -r -t 20 -u 3 _ || true
+  exit 143
+}
+trap stopped TERM
+wait "$child"
+"""
+
+
 # The argv of every foamy-weather-helper (and wrapper) of this run seen
 # during a search.
 ARGVS = []
@@ -189,6 +327,51 @@ def slow_search(handler):
     except OSError:
         pass  # the cancelled search's helper is gone
     handler.close_connection = True
+
+
+def slow_stop(certs, certs_dir):
+    """The scenario of SLOW_STOP_SHELL; True when it passed."""
+    global ARRIVED
+    work = Path(certs_dir) / "slow-stop"
+    work.mkdir()
+    ARRIVED = work / "arrived"
+    stopping, release = work / "stopping", work / "release"
+    os.mkfifo(release, 0o600)
+    # The plugin with the stand-in in place of its helper.
+    plugin = work / "plugin"
+    plugin.mkdir()
+    for entry in ROOT.iterdir():
+        if entry.name != "bin":
+            (plugin / entry.name).symlink_to(entry)
+    stand_in = plugin / "bin" / platform.machine() / "foamy-weather-helper"
+    stand_in.parent.mkdir(parents=True)
+    real = " ".join(shlex.quote(part) for part in fakenet.helper_command("geocode")[:-1])
+    stand_in.write_text(
+        SLOW_STOP_HELPER.replace("REAL", real)
+        .replace("STOPPING", shlex.quote(str(stopping)))
+        .replace("RELEASE", shlex.quote(str(release)))
+    )
+    stand_in.chmod(0o755)
+    shell = (
+        SLOW_STOP_SHELL.replace("ARRIVED", json.dumps(str(ARRIVED)))
+        .replace("STOPPING", json.dumps(str(stopping)))
+        .replace("RELEASE", json.dumps(str(release)))
+    )
+    with fakenet.Server(certs, {"search": slow_search}) as server:
+        run = harness.Run("4.5", shell, plugin=plugin, prefix="foamy-weather-search-", system_bus="private")
+        connectivity = run.base / "connectivity"
+        fake_nm.set_connectivity(connectivity, fake_nm.NONE)
+        run.env = fakenet.network_env(run.env, server.port, certs["ca"])
+        run.start_buses()
+        with fake_nm.start(run.system_bus_address, connectivity):
+            run.run(timeout=60)
+    if run.ok:
+        print("4.5: a search due while the stopped helper exits still runs")
+        run.cleanup()
+        return True
+    print(f"4.5: slow stop FAILED (log {run.base}/qs.log)")
+    print("\n".join(run.failures() or run.log.splitlines()[-30:]))
+    return False
 
 
 def main():
@@ -239,10 +422,12 @@ def main():
     if run.ok:
         print(f"4.5: {len(checks)} search checks passed")
         run.cleanup()
-        return 0
-    print(f"4.5: FAILED (log {run.base}/qs.log)")
-    print("\n".join(run.failures() or run.log.splitlines()[-30:]))
-    return 1
+    else:
+        print(f"4.5: FAILED (log {run.base}/qs.log)")
+        print("\n".join(run.failures() or run.log.splitlines()[-30:]))
+    with tempfile.TemporaryDirectory(prefix="foamy-weather-search-") as certs_dir:
+        slow_ok = slow_stop(fakenet.make_certs(certs_dir), certs_dir)
+    return 0 if run.ok and slow_ok else 1
 
 
 if __name__ == "__main__":

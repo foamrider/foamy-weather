@@ -48,7 +48,8 @@ fn field<'a>(doc: &'a Value, key: &str) -> Option<&'a Value> {
 /// The script's `cached_geoclue_location`.
 fn cached_location(path: &Path, max_age: i64) -> Option<String> {
     let cache = util::read_regular(path, MAX_CACHE_FILE)?;
-    if util::now() - cache.mtime.tv_sec >= max_age {
+    // A cache dated in the future (the clock was set back) has no known age.
+    if !(0..max_age).contains(&(util::now() - cache.mtime.tv_sec)) {
         return None;
     }
     let doc = util::parse_one(&cache.data)?;
@@ -101,7 +102,7 @@ fn location_label(latitude: &str, longitude: &str, cache_root: &Path, user_agent
 
     let max_age = util::env_seconds("WEATHER_LOCATION_LABEL_CACHE_MAX_AGE", 604800);
     if let Some(mtime) = util::mtime(&cache_file)
-        && util::now() - mtime < max_age
+        && (0..max_age).contains(&(util::now() - mtime))
         && let Some(label) = read_label(&cache_file)
     {
         return label;
