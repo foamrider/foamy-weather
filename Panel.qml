@@ -106,6 +106,7 @@ Panel {
   property int suggestionIndex: 0
   property string searchText: ""
   property bool searchCompleted: false
+  // A query waiting for the stopped search's helper to exit; "" when none.
   property string geocodePendingQuery: ""
   property string geocodeActiveQuery: ""
   // Bumped whenever the search text changes or is cleared. A search started
@@ -241,6 +242,7 @@ Panel {
     geocodeGeneration++
     geocodeDebounce.stop()
     geocodeProc.running = false
+    geocodePendingQuery = ""
     locationSuggestions = []
     searchCompleted = false
     settingsError = ""
@@ -300,6 +302,7 @@ Panel {
     if (!editingLocation || automaticLocation || geocodePendingQuery.length < 2)
       return
     geocodeActiveQuery = geocodePendingQuery
+    geocodePendingQuery = ""
     geocodeProc.generation = geocodeGeneration
     // The typed place goes to the helper on stdin, not in its (procfs-visible) argv.
     geocodeProc.requestInput = JSON.stringify({
@@ -335,6 +338,11 @@ Panel {
       stdinEnabled = false
     }
     onExited: function (exitCode) {
+      // A stopped search can still be exiting when the next one is due;
+      // requestGeocode then only queued it. Start it after this handler,
+      // as the forecast restarts its process.
+      if (root.geocodePendingQuery !== "")
+        Qt.callLater(root.startGeocode)
       if (!geocodeProc.wanted)
         return
       // No helper for this CPU: say so; searches only run on typing, never retried.
