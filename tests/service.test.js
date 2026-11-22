@@ -56,14 +56,14 @@ const copy = value => JSON.parse(JSON.stringify(value))
 test("current() replies with the shown report", () => {
   assert.deepEqual(reply({}), { ok: true, temperature: 6, unit: "C", code: "lightrain", condition: "Light rain",
     high: 10, low: 2, location: "Bergen", updatedAt: "2026-11-08T08:30:00.000Z" })
-  // The widget's units and the display language. Whole degrees for the
-  // day's high and low, so the reply does not depend on where it rounds.
-  const whole = copy(report)
-  whole.forecast.properties.timeseries[1].data.instant.details.air_temperature = 10
-  whole.forecast.properties.timeseries[2].data.instant.details.air_temperature = 2
-  assert.deepEqual(reply({ report: whole, units: "imperial", translate: key => I.text(key, "no") }),
+  // The widget's units and the display language. The day's range is
+  // rounded once, after converting: 9.6 °C is 49.28 °F and 1.6 °C is
+  // 34.88 °F (rounding to 10 and 2 °C first gives 50 and 36).
+  const range = copy(report)
+  range.forecast.properties.timeseries[2].data.instant.details.air_temperature = 1.6
+  assert.deepEqual(reply({ report: range, units: "imperial", translate: key => I.text(key, "no") }),
     { ok: true, temperature: 44, unit: "F", code: "lightrain", condition: "Lett regn",
-      high: 50, low: 36, location: "Bergen", updatedAt: "2026-11-08T08:30:00.000Z" })
+      high: 49, low: 35, location: "Bergen", updatedAt: "2026-11-08T08:30:00.000Z" })
   // Data stays ok while a refresh, a retry or a stale cache is underway.
   assert.equal(reply({ pending: true, networkConnected: false }).ok, true)
   assert.equal(reply({ report: Object.assign({}, report, { stale: true }) }).ok, true)

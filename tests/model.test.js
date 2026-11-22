@@ -2,6 +2,7 @@ process.env.TZ = "Europe/Oslo"
 const assert = require("node:assert/strict")
 const test = require("node:test")
 const Model = require("../Model.js")
+const Preferences = require("../Preferences.js")
 
 function entry(time, temperature, symbol, precipitation = 0, uvIndex = 0) {
   return {
@@ -112,8 +113,14 @@ test("three days from today", () => {
   const days = Model.forecastDays(parsed, new Date("2026-08-21T08:15:00+02:00"))
   assert.equal(days.length, 3)
   assert.equal(days[0].date, "2026-08-21")
-  assert.equal(days[0].high, 16)
-  assert.equal(days[0].low, 11)
+  // Unrounded, so imperial units round once: 15.7 °C is 60.26 °F, shown as
+  // 60, not 61 from a high first rounded to 16 °C.
+  assert.equal(days[0].high, 15.7)
+  assert.equal(days[0].low, 11.4)
+  assert.equal(Preferences.temperature(days[0].high, "imperial"), "60°")
+  assert.equal(Preferences.temperature(days[0].low, "imperial"), "53°")
+  assert.equal(Preferences.temperature(days[0].high, "metric"), "16°")
+  assert.equal(Preferences.temperature(days[0].low, "metric"), "11°")
   assert.equal(days[0].precipitation, 1)
   assert.equal(days[0].sunrise, "2026-08-21T05:50:00+02:00")
   assert.equal(days[1].symbol, "fair_day")

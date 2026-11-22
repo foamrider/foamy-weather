@@ -274,8 +274,9 @@ function forecastDays(bundle, now) {
     result.push({
       date: dateKey,
       dateObject: dateFromKey(dateKey),
-      high: round(high, 0),
-      low: round(low, 0),
+      // Unrounded: the units conversion rounds once, after converting.
+      high: high,
+      low: low,
       symbol: representative ? representative.symbol : "cloudy",
       precipitation: dailyPrecipitation(dayPoints),
       sunrise: sun.sunrise || "",
