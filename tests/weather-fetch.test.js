@@ -324,6 +324,31 @@ test("a 304 carrying Content-Encoding renews the cache without decoding", async 
   assert.equal(Model.currentCondition(Model.parseBundle(JSON.stringify(report))).temperature, 12);
 });
 
+test("a 304 for a cache removed during the request shows the cached forecast, dated now", async t => {
+  const f = await fixture(t);
+  const lastModified = "Thu, 29 Oct 2026 10:00:00 GMT";
+  f.responses.forecast.headers = { "Last-Modified": lastModified };
+  assert.equal((await f.run()).stale, false);
+  const old = new Date(Date.now() - 7200 * 1000);
+  await fs.utimes(f.forecastPath, old, old);
+  // The helper reads the cache before the request; the file is gone when
+  // MET answers 304, so its time cannot be renewed.
+  f.responses.forecast = { async handle(req, res) {
+    assert.equal(req.headers["if-modified-since"], lastModified);
+    await fs.unlink(f.forecastPath);
+    res.writeHead(304);
+    res.end();
+  } };
+  const before = Math.floor(Date.now() / 1000);
+  const report = await f.run();
+  const after = Math.ceil(Date.now() / 1000);
+  assert.equal(f.forecastHeaders.length, 2);
+  assert.equal(report.stale, false);
+  assert.equal(Model.currentCondition(Model.parseBundle(JSON.stringify(report))).temperature, 12);
+  const fetchedAt = Date.parse(report.fetchedAt) / 1000;
+  assert.ok(fetchedAt >= before && fetchedAt <= after, `fetchedAt ${report.fetchedAt}`);
+});
+
 test("an empty 200 with Content-Encoding is an empty body, as with curl, and a failed refresh", async t => {
   const f = await fixture(t);
   assert.equal((await f.run()).stale, false);
