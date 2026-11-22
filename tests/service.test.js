@@ -109,7 +109,7 @@ const READER_UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028\u2029\u202a
 for (const [label, name, condition] of [
   ["characters outside the BMP", "\u{1D538}".repeat(60), "\u{1F326} ".repeat(40)],
   ["an odd cut through a surrogate pair", "a" + "\u{1D538}".repeat(60), "a" + "\u{1F326}".repeat(40)],
-  ["direction marks and isolates", "\u200f\u05EA\u05DC \u05D0\u05D1\u05D9\u05D1\u200e \u2067x\u2069 \u202bq\u202c\ufeff",
+  ["direction marks and isolates", "\u200f\u05EA\u05DC \u05D0\u05D1\u05D9\u05D1\u200e \u2067x\u2069 \u202bq\u202c\ufeff \u061c\u0639\u0645\u0627\u0646",
     "\u2068Light rain\u2069"]
 ]) {
   test(`current() strings stay within what JavaScript readers accept: ${label}`, () => {
@@ -120,6 +120,8 @@ for (const [label, name, condition] of [
       const text = answer[field]
       assert.ok(text.length > 0 && text.length <= limit, `${field} has ${text.length} UTF-16 units`)
       assert.doesNotMatch(text, READER_UNSAFE, field)
+      // The README promises no direction formatting character at all.
+      assert.doesNotMatch(text, /\p{Bidi_Control}/u, field)
       assert.doesNotMatch(text, /[\uD800-\uDBFF]$/, `${field} ends in half a surrogate pair`)
       assert.ok(Array.from(text).every(c => c.length === 1 || /^[\uD800-\uDBFF][\uDC00-\uDFFF]$/.test(c)), `${field} has a lone surrogate`)
     }

@@ -415,12 +415,12 @@ var REPLY_LIMITS = { code: 48, condition: 64, location: 80 }
 
 // One line of plain text, at most `limit` UTF-16 code units and never cut
 // inside a surrogate pair: control and line separator characters become
-// spaces, direction formatting characters (which those readers also refuse)
-// are dropped, runs of spaces collapse.
+// spaces, direction formatting characters (Unicode Bidi_Control; those
+// readers refuse all but U+061C) are dropped, runs of spaces collapse.
 function plainText(value, limit) {
   var text = String(value === undefined || value === null ? "" : value)
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
-    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
+    .replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
     .replace(/\s+/g, " ")
   text = trimmed(text)
   if (text.length <= limit) return text
