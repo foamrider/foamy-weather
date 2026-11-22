@@ -211,7 +211,11 @@ fn run(args: &[OsString]) -> String {
         cached_last_modified = plain_date(lines.next().unwrap_or(""))
             .unwrap_or("")
             .to_string();
-        fresh = if force {
+        // A cache dated in the future (the clock was set back) has no known
+        // age, and its Expires came from the same clock: refresh it.
+        fresh = if age < 0 {
+            false
+        } else if force {
             age < force_min_age
         } else if let Some(expires) = expires {
             now < expires
@@ -222,6 +226,8 @@ fn run(args: &[OsString]) -> String {
 
     let mut cached = cache.map(|c| c.data);
     let mut stale = false;
+    // Set when this run's download could not be dated through the cache file.
+    let mut fetched_at = None;
     if !fresh {
         let target = format!("/weatherapi/locationforecast/2.0/complete?lat={lat3}&lon={lon3}");
         let validator = (cached.is_some() && !cached_last_modified.is_empty())
@@ -230,12 +236,18 @@ fn run(args: &[OsString]) -> String {
             Download::Fresh(response) => {
                 if util::write_private(&forecast_cache, &response.body).is_ok() {
                     save_meta(&forecast_meta, &response, "", util::now());
+                } else {
+                    // The cache path holds an older file or none: the forecast
+                    // in memory is still the one just downloaded.
+                    fetched_at = Some(util::now());
                 }
                 cached = Some(response.body);
             }
             // Unchanged on MET's side: the cached forecast is current again.
             Download::NotModified(response) if cached.is_some() => {
-                let _ = util::set_times(&forecast_cache, None);
+                if util::set_times(&forecast_cache, None).is_err() {
+                    fetched_at = Some(util::now());
+                }
                 save_meta(
                     &forecast_meta,
                     &response,
@@ -311,7 +323,7 @@ fn run(args: &[OsString]) -> String {
         ));
     }
 
-    let Some(fetched) = util::mtime(&forecast_cache) else {
+    let Some(fetched) = fetched_at.or_else(|| util::mtime(&forecast_cache)) else {
         return util::error_json(keys::UNAVAILABLE, &[]);
     };
     let forecast =

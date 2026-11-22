@@ -279,6 +279,27 @@ test("honours MET Expires, revalidates with If-Modified-Since and spaces forced 
   assert.equal(f.forecastHeaders[2]["if-modified-since"], lastModified);
 });
 
+// After the clock is set back, the cache and its Expires are dated in the
+// future; such a cache has no known age and is refreshed.
+for (const [label, force, meta] of [
+  ["without Expires", false, () => "\n\n"],
+  ["with an Expires from the old clock", false, future => `${future + 3600}\n\n`],
+  ["on a forced refresh", true, () => "\n\n"]
+]) {
+  test(`a cache dated in the future is refreshed ${label}`, async t => {
+    const f = await fixture(t);
+    await f.run();
+    assert.equal(f.forecastHeaders.length, 1);
+    const future = Math.floor(Date.now() / 1000) + 24 * 3600;
+    await fs.writeFile(f.forecastPath.replace(/\.json$/, ".meta"), meta(future));
+    await fs.utimes(f.forecastPath, future, future);
+    const report = await f.run(force, { MET_WEATHER_FORCE_MIN_AGE: "60" });
+    assert.equal(f.forecastHeaders.length, 2, "the future cache counted as fresh");
+    assert.equal(report.stale, false);
+    assert.ok((await fs.stat(f.forecastPath)).mtimeMs / 1000 < future, "the refresh did not renew the cache date");
+  });
+}
+
 test("a 304 carrying Content-Encoding renews the cache without decoding", async t => {
   const f = await fixture(t);
   const lastModified = "Thu, 29 Oct 2026 10:00:00 GMT";
@@ -510,16 +531,22 @@ test("a symlinked or FIFO cache is neither read nor written through", async t =>
   assert.deepEqual(f.requests, ["forecast"], "the file behind the link was used as a cache");
   await unchanged();
   // Opening the FIFO to read or write would block the helper until the exec
-  // timeout kills it. The reply of this run is not checked: a forecast that
-  // cannot be cached currently reads as unavailable.
+  // timeout kills it.
   const blocked = e => {
     if (e.killed) assert.fail("the helper blocked on the FIFO sun cache");
     throw e;
   };
   f.responses.forecast.status = 200;
-  await f.run().catch(blocked);
+  const before = Math.floor(Date.now() / 1000);
+  const uncached = await f.run().catch(blocked);
+  const after = Math.ceil(Date.now() / 1000);
   assert.equal(f.requests[1], "forecast", "the file behind the link was used as a cache");
   await unchanged();
+  // The download is shown although it could not be cached, dated now.
+  assert.equal(uncached.stale, false);
+  assert.equal(Model.currentCondition(Model.parseBundle(JSON.stringify(uncached))).temperature, 12);
+  const fetchedAt = Date.parse(uncached.fetchedAt) / 1000;
+  assert.ok(fetchedAt >= before && fetchedAt <= after, `fetchedAt ${uncached.fetchedAt}`);
   await fs.unlink(f.forecastPath);
   const report = await f.run().catch(blocked);
   assert.equal(report.stale, false);

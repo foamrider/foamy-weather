@@ -18,8 +18,9 @@
 //!   weather","values":[]}` before any request.
 //! - **stdout**: one JSON line, always, exit 0: `{"forecast":<MET's
 //!   document, whitespace removed>,"sun":[{"date":"YYYY-MM-DD","sunrise":"…",
-//!   "sunset":"…"}×3],"fetchedAt":"<cache mtime, local ISO 8601 with
-//!   ±HH:MM>","stale":<bool>}`, or `{"error":<English key>,"values":[…]}`
+//!   "sunset":"…"}×3],"fetchedAt":"<cache mtime (the time of this run's
+//!   download when the cache cannot be written or renewed), local ISO 8601
+//!   with ±HH:MM>","stale":<bool>}`, or `{"error":<English key>,"values":[…]}`
 //!   (`Weather data is unavailable`; on a CPU without the instructions
 //!   Graviola needs and no usable cache, `foamy_helper::tls::UNSUPPORTED`).
 //!   Sunrise/sunset that could not be loaded are `""`.
@@ -41,10 +42,10 @@
 //!   and none at all when the forecast refresh failed (`"stale":true`); the
 //!   first that fails (an error or an invalid reply) ends them for this run.
 //! - **Freshness**: a valid cache (0 < size ≤ limit, one JSON document of
-//!   the right shape) is used without a request when: `--force` and younger
-//!   than `MET_WEATHER_FORCE_MIN_AGE` s (default 60); else, when the meta has
-//!   an Expires, before it; else younger than `MET_WEATHER_CACHE_MAX_AGE` s
-//!   (default 1800). Expires is honoured only in the future and capped at six
+//!   the right shape, mtime not in the future) is used without a request
+//!   when: `--force` and younger than `MET_WEATHER_FORCE_MIN_AGE` s (default
+//!   60); else, when the meta has an Expires, before it; else younger than
+//!   `MET_WEATHER_CACHE_MAX_AGE` s (default 1800). Expires is honoured only in the future and capped at six
 //!   hours. A refresh of a valid cache sends `If-Modified-Since` with the
 //!   stored Last-Modified; 304 renews the cache's mtime and keeps the stored
 //!   Last-Modified when the reply has none. A failed refresh with a valid
