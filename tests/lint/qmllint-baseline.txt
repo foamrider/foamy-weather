@@ -46,9 +46,6 @@ WeatherSettings.qml: missing-property: Member "automaticLocation" not found on t
 WeatherSettings.qml: missing-property: Member "automaticLocation" not found on type "QObject" | visible: !page.c.automaticLocation
 WeatherSettings.qml: missing-property: Member "automaticLocation" not found on type "QObject" | visible: !page.c.automaticLocation && (page.c.searching || page.c.searchCompleted && !page.c.locationSuggestions.length)
 WeatherSettings.qml: missing-property: Member "automaticLocation" not found on type "QObject" | visible: page.c.automaticLocation && (page.c.resolvingLocation || page.c.dynamicLocationErrorText !== "")
-WeatherSettings.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
-WeatherSettings.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-WeatherSettings.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
 WeatherSettings.qml: missing-property: Member "canRetry" not found on type "QObject" | retryable: c.canRetry
 WeatherSettings.qml: missing-property: Member "cancelEditingLocation" not found on type "QObject" | onBack: c.cancelEditingLocation()
 WeatherSettings.qml: missing-property: Member "cancelEditingLocation" not found on type "QObject" | page.c.cancelEditingLocation()
@@ -92,23 +89,12 @@ WeatherView.qml: missing-property: Member "animations" not found on type "QObjec
 WeatherView.qml: missing-property: Member "automaticLabel" not found on type "QObject" | source: view.c.automaticLabel ? FoamyI18n.t("MET Norway · OpenStreetMap") : FoamyI18n.t("MET Norway")
 WeatherView.qml: missing-property: Member "background" not found on type "QObject" | color: Qt.alpha(Commons.Color.popups.background, !view.skyShown ? 0.35 : (view.lightTheme ? 0.70 : 0.58) + 0.2 * view.skyGlare)
 WeatherView.qml: missing-property: Member "background" not found on type "QObject" | surfaceColor: Commons.Color.popups.background
-WeatherView.qml: missing-property: Member "body" not found on type "QObject" | font.pixelSize: FoamyStyle.font.body
-WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
-WeatherView.qml: missing-property: Member "bodySmall" not found on type "QObject" | font.pixelSize: FoamyStyle.font.bodySmall
 WeatherView.qml: missing-property: Member "close" not found on type "QObject" | onCloseRequested: c.close()
 WeatherView.qml: missing-property: Member "configuredLocationState" not found on type "QObject" | location: view.c.configuredLocationState
 WeatherView.qml: missing-property: Member "configuredLocationState" not found on type "QObject" | readonly property var skyConditions: Scene.conditions(current, c.now, c.configuredLocationState)
 WeatherView.qml: missing-property: Member "contentActive" not found on type "QObject" | readonly property var forecastDays: c.contentActive && !c.editingLocation ? Model.forecastDays(c.report, c.now) : []
 WeatherView.qml: missing-property: Member "current" not found on type "QObject" | readonly property var current: c.current
 WeatherView.qml: missing-property: Member "currentDescription" not found on type "QObject" | text: view.c.currentDescription
-WeatherView.qml: missing-property: Member "display" not found on type "QObject" | font.pixelSize: FoamyStyle.font.display
-WeatherView.qml: missing-property: Member "display" not found on type "QObject" | font.pixelSize: FoamyStyle.font.display
 WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | Component.onCompleted: if (view.c.editingLocation)
 WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | blocked: c.editingLocation
 WeatherView.qml: missing-property: Member "editingLocation" not found on type "QObject" | if (!c.editingLocation && c.selectedDayIndex >= forecastDays.length)
@@ -126,8 +112,6 @@ WeatherView.qml: missing-property: Member "focusBack" not found on type "QObject
 WeatherView.qml: missing-property: Member "hairline" not found on type "QObject" | border.width: Style.spacing.hairline
 WeatherView.qml: missing-property: Member "hairline" not found on type "QObject" | border.width: selected ? Style.spacing.hairline : 0
 WeatherView.qml: missing-property: Member "hairline" not found on type "QObject" | width: Style.spacing.hairline
-WeatherView.qml: missing-property: Member "heading" not found on type "QObject" | font.pixelSize: FoamyStyle.font.heading
-WeatherView.qml: missing-property: Member "iconLarge" not found on type "QObject" | font.pixelSize: FoamyStyle.font.iconLarge
 WeatherView.qml: missing-property: Member "loading" not found on type "QObject" | if (!c.loading && c.networkReady)
 WeatherView.qml: missing-property: Member "loading" not found on type "QObject" | readonly property string footerStatus: c.loading ? FoamyI18n.t("Refreshing…") : !c.networkReady ? FoamyI18n.t("Waiting for network…") : updatedText ? FoamyI18n.
 WeatherView.qml: missing-property: Member "loading" not found on type "QObject" | readonly property string headerMeta: !current ? (c.loading ? FoamyI18n.t("Loading weather…") : FoamyI18n.t("Waiting for weather")) : forecastDays.length ? Foamy
@@ -141,7 +125,6 @@ WeatherView.qml: missing-property: Member "now" not found on type "QObject" | no
 WeatherView.qml: missing-property: Member "now" not found on type "QObject" | readonly property string updatedText: c.report && c.report.fetchedAt ? Preferences.age(c.report.fetchedAt, c.now, FoamyI18n.t, FoamyI18n.tn) : ""
 WeatherView.qml: missing-property: Member "now" not found on type "QObject" | readonly property var forecastDays: c.contentActive && !c.editingLocation ? Model.forecastDays(c.report, c.now) : []
 WeatherView.qml: missing-property: Member "now" not found on type "QObject" | readonly property var skyConditions: Scene.conditions(current, c.now, c.configuredLocationState)
-WeatherView.qml: missing-property: Member "numeral" not found on type "QObject" | font.pixelSize: FoamyStyle.font.numeral
 WeatherView.qml: missing-property: Member "opened" not found on type "QObject" | if (!view.c.opened)
 WeatherView.qml: missing-property: Member "opened" not found on type "QObject" | refreshing: view.c.opened && view.c.loading
 WeatherView.qml: missing-property: Member "opened" not found on type "QObject" | shown: view.c.opened && !view.c.editingLocation && band.y + band.height > weatherScroll.contentY
@@ -164,10 +147,8 @@ WeatherView.qml: missing-property: Member "startEditingLocation" not found on ty
 WeatherView.qml: missing-property: Member "statusText" not found on type "QObject" | readonly property bool info: view.c.statusText !== "" || view.c.errorIsStale
 WeatherView.qml: missing-property: Member "statusText" not found on type "QObject" | readonly property string message: view.c.statusText || view.c.errorText
 WeatherView.qml: missing-property: Member "statusText" not found on type "QObject" | visible: view.c.statusText !== "" || view.c.errorText !== ""
-WeatherView.qml: missing-property: Member "subtitle" not found on type "QObject" | font.pixelSize: FoamyStyle.font.subtitle
 WeatherView.qml: missing-property: Member "switchPanel" not found on type "QObject" | c.switchPanel(direction)
 WeatherView.qml: missing-property: Member "text" not found on type "QObject" | border.color: Qt.alpha(Commons.Color.popups.text, 0.08)
-WeatherView.qml: missing-property: Member "title" not found on type "QObject" | font.pixelSize: FoamyStyle.font.title
 WeatherView.qml: missing-property: Member "units" not found on type "QObject" | return Preferences.precipitation(value, c.units, FoamyI18n.number)
 WeatherView.qml: missing-property: Member "units" not found on type "QObject" | return Preferences.temperature(value, c.units, FoamyI18n.number)
 WeatherView.qml: missing-property: Member "units" not found on type "QObject" | return Preferences.wind(value, c.units, FoamyI18n.t, FoamyI18n.number)
