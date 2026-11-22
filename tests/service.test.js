@@ -91,16 +91,40 @@ test("current() gives bounded, single-line strings whatever the report holds", (
   const bounded = reply({ report: hostile, translate: () => "A\tvery " + "long ".repeat(40) })
   assert.equal(bounded.code, "cloudy", "an over-long or odd code reads as cloudy")
   assert.equal(reply({ report: Object.assign({}, report, { forecast: { properties: { timeseries: [entry("2026-11-08T09:00:00Z", 5, "Rain\"<b>")] } } }) }).code, "cloudy")
-  assert.ok(Array.from(bounded.location).length <= Model.REPLY_LIMITS.location, "location bounded")
+  assert.ok(bounded.location.length <= Model.REPLY_LIMITS.location, "location bounded")
   assert.ok(bounded.location.startsWith("Line one "), "control and separator characters become spaces: " + bounded.location)
   assert.doesNotMatch(bounded.location, /[\uD800-\uDBFF]$/, "never ends in half a surrogate pair")
-  assert.ok(Array.from(bounded.condition).length <= Model.REPLY_LIMITS.condition && !/\t/.test(bounded.condition), "condition bounded")
+  assert.ok(bounded.condition.length <= Model.REPLY_LIMITS.condition && !/\t/.test(bounded.condition), "condition bounded")
   assert.equal(bounded.updatedAt, "", "an unreadable fetch time is empty")
   assert.ok(JSON.stringify(bounded).length < 600, "reply stays small")
   // A report without a place name, and one with padding and a line break.
   assert.equal(reply({ report: Object.assign({}, report, { locationName: undefined }) }).location, "")
   assert.equal(reply({ report: Object.assign({}, report, { locationName: "  a \r\n b  " }) }).location, "a b")
 })
+
+// What a JavaScript reader such as the Foamy lock screen accepts: at most
+// `limit` UTF-16 code units, and no control, line separator or direction
+// formatting character; anything else makes it drop the whole reply.
+const READER_UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff]/
+for (const [label, name, condition] of [
+  ["characters outside the BMP", "\u{1D538}".repeat(60), "\u{1F326} ".repeat(40)],
+  ["an odd cut through a surrogate pair", "a" + "\u{1D538}".repeat(60), "a" + "\u{1F326}".repeat(40)],
+  ["direction marks and isolates", "\u200f\u05EA\u05DC \u05D0\u05D1\u05D9\u05D1\u200e \u2067x\u2069 \u202bq\u202c\ufeff",
+    "\u2068Light rain\u2069"]
+]) {
+  test(`current() strings stay within what JavaScript readers accept: ${label}`, () => {
+    const odd = copy(report)
+    odd.locationName = name
+    const answer = reply({ report: odd, translate: () => condition })
+    for (const [field, limit] of [["location", Model.REPLY_LIMITS.location], ["condition", Model.REPLY_LIMITS.condition]]) {
+      const text = answer[field]
+      assert.ok(text.length > 0 && text.length <= limit, `${field} has ${text.length} UTF-16 units`)
+      assert.doesNotMatch(text, READER_UNSAFE, field)
+      assert.doesNotMatch(text, /[\uD800-\uDBFF]$/, `${field} ends in half a surrogate pair`)
+      assert.ok(Array.from(text).every(c => c.length === 1 || /^[\uD800-\uDBFF][\uDC00-\uDFFF]$/.test(c)), `${field} has a lone surrogate`)
+    }
+  })
+}
 
 // --- wiring --------------------------------------------------------------------------
 test("the manifest loads the service and the bar widget", () => {

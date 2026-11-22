@@ -408,18 +408,24 @@ function pluginEntry(raw, id) {
   return { valid: true, found: false, settings: {} }
 }
 
-// Longest strings in a current() reply, in code points.
+// Longest strings in a current() reply, in UTF-16 code units: readers such
+// as the Foamy lock screen check a string's JavaScript length and drop the
+// whole reply when one is longer.
 var REPLY_LIMITS = { code: 48, condition: 64, location: 80 }
 
-// One line of plain text, at most `limit` code points: control and line
-// separator characters become spaces, runs of spaces collapse.
+// One line of plain text, at most `limit` UTF-16 code units and never cut
+// inside a surrogate pair: control and line separator characters become
+// spaces, direction formatting characters (which those readers also refuse)
+// are dropped, runs of spaces collapse.
 function plainText(value, limit) {
   var text = String(value === undefined || value === null ? "" : value)
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
     .replace(/\s+/g, " ")
   text = trimmed(text)
-  var points = Array.from(text)
-  return points.length > limit ? trimmed(points.slice(0, limit).join("")) : text
+  if (text.length <= limit) return text
+  var end = /[\uD800-\uDBFF]/.test(text.charAt(limit - 1)) ? limit - 1 : limit
+  return trimmed(text.slice(0, end))
 }
 
 function wholeOrNull(value) {
