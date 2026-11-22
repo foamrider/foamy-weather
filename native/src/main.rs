@@ -45,12 +45,12 @@
 //!   the right shape, mtime not in the future) is used without a request
 //!   when: `--force` and younger than `MET_WEATHER_FORCE_MIN_AGE` s (default
 //!   60); else, when the meta has an Expires, before it; else younger than
-//!   `MET_WEATHER_CACHE_MAX_AGE` s (default 1800). Expires is honoured only in the future and capped at six
-//!   hours. A refresh of a valid cache sends `If-Modified-Since` with the
-//!   stored Last-Modified; 304 renews the cache's mtime and keeps the stored
-//!   Last-Modified when the reply has none. A failed refresh with a valid
-//!   cache reports it with `"stale":true`. A sun cache is valid for its date
-//!   forever.
+//!   `MET_WEATHER_CACHE_MAX_AGE` s (default 1800). Expires is honoured only
+//!   in the future and capped at six hours. A refresh of a valid cache sends
+//!   `If-Modified-Since` with the stored Last-Modified; 304 renews the
+//!   cache's mtime and keeps the stored Last-Modified when the reply has
+//!   none. A failed refresh with a valid cache reports it with
+//!   `"stale":true`. A sun cache is valid for its date forever.
 //! - **Limits**: decoded bodies of 2 MiB (forecast) and 64 KiB (sun); one
 //!   byte more is a failure. Forecast: 3 s to connect (DNS, TCP, proxy, TLS),
 //!   10 s in all; sun: 3 s / 8 s.
@@ -90,8 +90,9 @@
 //!   `$WEATHER_LOCATION_RUNTIME_DIR`, else
 //!   `$XDG_RUNTIME_DIR/omarchy-weather-$UID`; created 0700, refused when it is
 //!   a symlink or not this user's, then `chmod 700`. `current-location.json`
-//!   (0600) is reused for `WEATHER_LOCATION_CACHE_MAX_AGE` s (default 900)
-//!   unless `--force`, which deletes it first.
+//!   (0600) is reused for `WEATHER_LOCATION_CACHE_MAX_AGE` s (default 900),
+//!   not when its mtime is in the future, and not with `--force`, which
+//!   deletes it first.
 //! - **GeoClue**: `$WEATHER_GEOCLUE_COMMAND` (default
 //!   `/usr/lib/geoclue-2.0/demos/where-am-i`), no arguments, if executable,
 //!   for at most 5 s (then its process group is killed) and 64 KiB of output;
@@ -100,7 +101,8 @@
 //! - **Place name**: `${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-weather/
 //!   location-<sha256 of "lat_lon">.json` (`{"name":…}`, 0600, legacy
 //!   `location-<lat>_<lon>.json` copied with its time) for
-//!   `WEATHER_LOCATION_LABEL_CACHE_MAX_AGE` s (default 604800), else
+//!   `WEATHER_LOCATION_LABEL_CACHE_MAX_AGE` s (default 604800) while its
+//!   mtime is not in the future, else
 //!   Nominatim `/reverse?format=jsonv2&lat=&lon=&zoom=10&addressdetails=1`
 //!   (3 s / 8 s, 256 KiB): the first of address city, town, village,
 //!   municipality, county, else `"<lat>, <lon>"`; cached either way.
