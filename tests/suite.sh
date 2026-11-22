@@ -54,11 +54,12 @@ else
   skip "the $other helper: this machine can't run it (qemu binfmt)"
 fi
 if ((ci || fast)); then
-  skip "runtime.py, search-runtime.py, fetch-runtime.py, sky-gpu.py and the kit's i18n_runtime.py: offscreen Quickshell"
+  skip "runtime.py, keys-runtime.py, search-runtime.py, fetch-runtime.py, sky-gpu.py and the kit's i18n_runtime.py: offscreen Quickshell"
 else
   # The same default as the runtime tests'.
   export FOAMY_KIT="${FOAMY_KIT:-$HOME/GitHub/Personal/foamy-kit}"
   run python3 tests/runtime.py
+  run python3 tests/keys-runtime.py
   run python3 tests/search-runtime.py
   run python3 tests/fetch-runtime.py
   run python3 tests/sky-gpu.py
