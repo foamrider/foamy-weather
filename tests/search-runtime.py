@@ -9,7 +9,8 @@ the server refuses says so. The query reaches the helper on stdin, never in
 its argv (read from /proc while the search runs), and the Norwegian display
 language asks for Norwegian place names. A cancelled search whose helper
 is still exiting when the next search is due does not lose that search, and
-text typed before that helper exits replaces the queued search.
+text typed as that helper exits, before the queued search starts, replaces
+it.
 
   python3 tests/search-runtime.py
 
@@ -154,9 +155,11 @@ ShellRoot {
 # when the shell writes a line to the RELEASE FIFO. The release comes from a
 # timer started with the typing and longer than the Panel's 300 ms search
 # delay; Qt fires timers in deadline order, so the delayed search is due
-# while the stopped helper still runs. Then once more, but with new text
-# typed after the delayed search was queued and before the stopped helper
-# exits: only the new text may be searched.
+# while the stopped helper still runs. Then once more, and new text is typed
+# when the Panel sees the stopped helper exit (`searching` turns false). The
+# delayed search is queued by then, and the Panel starts it only after the
+# exit's signal handlers (Qt.callLater), so the new text comes first however
+# late the helper exits: only the new text may be searched.
 SLOW_STOP_SHELL = r"""
 import QtQuick
 import Quickshell
@@ -185,13 +188,14 @@ ShellRoot {
   function stopped() { stopping.reload(); return stopping.text().length > 0 }
   Process { id: release; command: ["sh", "-c", "echo release >\"$1\"", "sh", RELEASE] }
   Timer { id: releaseLater; interval: 900; onTriggered: release.running = true }
-  Timer {
-    id: retypeLater
-    interval: 600
-    onTriggered: {
-      shell.widget.panel.searchEdited("Bergen")
-      release.running = true
-      shell.step++
+  // The second round types Bergen as the Panel sees the stopped helper exit.
+  Connections {
+    target: shell.widget ? shell.widget.panel : null
+    function onSearchingChanged() {
+      if (shell.step === 5 && !shell.widget.panel.searching) {
+        shell.widget.panel.searchEdited("Bergen")
+        shell.step++
+      }
     }
   }
 
@@ -243,10 +247,10 @@ ShellRoot {
         break
       case 4:
         if (!a.searching || shell.arrivals() < 3) return
-        // retypeLater queues this search behind the stopped helper, types
-        // Bergen and then releases the helper.
+        // Queued behind the stopped helper, as in the first round; Bergen
+        // is typed when the helper exits (Connections above).
         a.searchEdited("Trondheim ")
-        retypeLater.start()
+        releaseLater.start()
         shell.step++
         break
       case 5:
