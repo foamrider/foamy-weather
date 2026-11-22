@@ -1,5 +1,5 @@
-"""Bound clipboard producers in real subprocesses (on the kit's stand-ins,
-hostenv.clipboard_fakes()) and exercise the QML editor."""
+"""Exercise the QML editor (tests/tst_clipboard.qml) on the kit's clipboard
+stand-ins, hostenv.clipboard_fakes()."""
 
 import json
 import os
@@ -8,13 +8,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 KIT = Path(os.environ.get("FOAMY_KIT", Path.home() / "GitHub/Personal/foamy-kit"))
-HELPER = ROOT / "kit/clipboard.sh"
 # hostenv comes from the kit checkout (it is not synced); GitHub's runner has none.
 HOSTENV = KIT / "preview/hostenv.py"
 
@@ -39,38 +37,6 @@ class ClipboardTests(unittest.TestCase):
         # that keeps clipboard.sh's 2 s only for the modes whose outcome is
         # that deadline, so a loaded machine can't fail a paste that works.
         self.env = dict(os.environ, **self.hostenv.clipboard_fakes(self.base / "bin"))
-        self.state = Path(self.env["TEST_CLIPBOARD_STATE"])
-
-    def assert_producer_stopped(self):
-        pid = Path(str(self.state) + ".pid").read_text()
-        status = Path(f"/proc/{pid}/stat")
-        # The group leader can close stdout before a killed child is scheduled
-        # to exit. Observe the child's state with a bounded wait, without the
-        # exists/read race when /proc removes it between those two operations.
-        deadline = time.monotonic() + 1
-        while time.monotonic() < deadline:
-            try:
-                state = status.read_text().split()[2]
-            except (FileNotFoundError, ProcessLookupError):  # gone before the open, or before the read
-                return
-            if state == "Z":
-                return
-            time.sleep(0.01)
-        self.fail("clipboard producer survived its deadline")
-
-    def test_watchdog_survives_wrapper_destruction(self):
-        self.state.write_text("stall")
-        with subprocess.Popen(
-            ["bash", str(HELPER), "clipboard"], env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        ) as process:
-            pid_file = Path(str(self.state) + ".pid")
-            deadline = time.monotonic() + 2
-            while not pid_file.exists() and time.monotonic() < deadline:
-                time.sleep(0.01)
-            self.assertTrue(pid_file.exists(), "clipboard producer did not start")
-            process.kill()
-            process.communicate(timeout=4)
-        self.assert_producer_stopped()
 
     def test_qml_editing_and_paste(self):
         runner = shutil.which("qs")

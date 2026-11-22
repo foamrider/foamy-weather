@@ -279,14 +279,15 @@ FOAMY_HELPER="[\"$PWD/bin/aarch64/foamy-weather-helper\"]" node tests/weather-fe
 bash tests/kit-check.sh
 python3 "$FOAMY_KIT/preview/i18n_runtime.py" .  # live language switching (foamy-kit's shared check)
 python3 tests/runtime.py                       # needs foamy-kit (FOAMY_KIT)
+python3 tests/keys-runtime.py                  # the popup's keys after Settings closes, in a window; needs foamy-kit
 python3 tests/search-runtime.py                # the location search; needs foamy-kit
 python3 tests/fetch-runtime.py                 # the fetch: place changes, failures, automatic location; needs foamy-kit
 python3 tests/sky-gpu.py                       # the sky on a GPU (eglfs on a render node); skips without one
 ```
 
 The offscreen tests run on Omarchy 4.5, the installed `/usr/share/omarchy/shell`
-(`FOAMY_HOST_45` picks another 4.5 tree). runtime.py, search-runtime.py and
-fetch-runtime.py set the network state through foamy-kit's fake
+(`FOAMY_HOST_45` picks another 4.5 tree). runtime.py, keys-runtime.py,
+search-runtime.py and fetch-runtime.py set the network state through foamy-kit's fake
 NetworkManager (`preview/fake_nm.py`, on the run's private system bus; it
 needs dbus-python and PyGObject): offline, and for fetch-runtime.py online
 again (Limited, as behind a VPN).
