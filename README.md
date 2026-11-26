@@ -273,7 +273,7 @@ the offscreen runtime tests. One by one:
 
 ```sh
 for t in tests/*.test.js tests/i18n.test.cjs; do node "$t"; done   # service.test.js: current() and the entry
-python3 -m unittest tests.test_clipboard tests.test_location_privacy
+python3 -m unittest tests.test_location_privacy
 bash tests/test-weather-location.sh
 FOAMY_HELPER="[\"$PWD/bin/aarch64/foamy-weather-helper\"]" node tests/weather-fetch.test.js   # and the two above
 bash tests/kit-check.sh

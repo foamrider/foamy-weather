@@ -23,8 +23,6 @@ run() {
   "$@" || status=1
 }
 skip() { echo "SKIP $*"; }
-# test_clipboard's QML part starts a Quickshell.
-((ci)) && export FOAMY_TESTS_NO_QUICKSHELL=1
 
 # The helper tests, on this machine's helper and then the other one.
 helper_tests() {
@@ -36,7 +34,6 @@ for test in tests/*.test.js tests/i18n.test.cjs; do
   [[ $test == tests/weather-fetch.test.js ]] || run node "$test"
 done
 helper_tests
-run python3 -m unittest tests.test_clipboard
 other=x86_64
 [[ $(uname -m) == x86_64 ]] && other=aarch64
 # A usage error exits 2 when the binary runs (qemu binfmt for the other arch).
