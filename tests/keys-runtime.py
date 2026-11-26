@@ -1,13 +1,14 @@
 """The popup's keys after Settings closes, in the real Panel offscreen on
 Omarchy 4.5 (foamy-kit harness), with real key presses and clicks. The popup
 is shown in a window here (tests/runtime.py has none, so no item gets the
-keys there). A focused search field that hides gives the keys to its
-nearest focus scope, the hidden settings page, and the view must take them
-back: after Esc in the focused search field leaves Settings, an arrow walks
-the day cards, `s` opens Settings again and Esc closes the popup. Keys left
-with the hidden page still pass through it to the view, except Esc: the page
-takes it for its own Back, and the popup stays open. (`r` is the same
-text-key handler as `s`, and offline it fetches nothing to see.)
+keys there). When Settings hides, the keys must come back to the view
+(foamy-kit's FoamyPopup and SafeTextField give them to the popup body):
+after Esc in the focused search field leaves Settings, an arrow walks the
+day cards, `s` opens Settings again and Esc closes the popup; and after the
+popup closes on Settings and opens again, Esc closes it. Keys left with the
+hidden page still pass through it to the view, except Esc: the page takes
+it for its own Back, and the popup stays open. (`r` is the same text-key
+handler as `s`, and offline it fetches nothing to see.)
 
   python3 tests/keys-runtime.py
 
@@ -54,6 +55,16 @@ ShellRoot {
   function panel() { return widget ? widget.panel : null }
   function body() { var a = panel(); return a ? a.popup.bodyItem : null }
   function field() { return find(body(), "weatherLocationField") }
+  // The settings page: the search field's page, its own key home (kept
+  // once Settings has been built).
+  function page() {
+    for (var at = field(); at; at = at.parent) if (at.foamyKeyHome === at) return at
+    return null
+  }
+  function inside(item, ancestor) {
+    for (var at = item; at && ancestor; at = at.parent) if (at === ancestor) return true
+    return false
+  }
   // The item with the keys, named in the failure messages.
   function keys() { var b = body(); var w = b ? b.Window.window : null; return w ? w.activeFocusItem : null }
   function named(item) { return item ? (item.objectName || String(item).split("(")[0]) : "nothing" }
@@ -145,7 +156,32 @@ ShellRoot {
     var a = shell.panel()
     shell.key(Qt.Key_Escape)
     shell.check(!a.opened, "Esc then closes the popup: keys with " + shell.named(shell.keys()))
-    shell.finish()
+    shell.go(function() { return !a.popup.visible }, "the popup is gone", step3)
+  }
+
+  // The popup closes while Settings shows (the bar button, a click outside
+  // and IPC close all call the Panel's close()) and opens again: the hidden
+  // page has no keys, and Esc closes the popup.
+  function step3() {
+    var a = shell.panel()
+    a.openFromHotkey()
+    shell.go(function() { return a.opened && shell.keys() === shell.body() }, "the popup opens again with the keys", function() {
+      shell.key(Qt.Key_S)
+      shell.go(function() { return a.editingLocation && shell.inside(shell.keys(), shell.page()) },
+        "`s` opens Settings, and the page has the keys", function() {
+          a.close()
+          shell.go(function() { return !a.opened && !a.editingLocation && !a.popup.visible }, "the popup closes on Settings", function() {
+            a.openFromHotkey()
+            shell.go(function() { return a.opened && shell.inside(shell.keys(), shell.body()) },
+              "the popup opens again with the keys in its body", function() {
+                shell.check(!shell.inside(shell.keys(), shell.page()), "the hidden settings page has no keys: keys with " + shell.named(shell.keys()))
+                shell.key(Qt.Key_Escape)
+                shell.check(!a.opened, "Esc closes the popup that closed on Settings: keys with " + shell.named(shell.keys()))
+                shell.finish()
+              })
+          })
+        })
+    })
   }
 }
 """

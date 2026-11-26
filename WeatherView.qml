@@ -155,10 +155,6 @@ PanelKeyCatcher {
           if (settingsLoader.item)
             settingsLoader.item.focusBack()
         })
-      else
-        Qt.callLater(function () {
-          view.forceActiveFocus()
-        })
     }
   }
 
