@@ -444,6 +444,7 @@ Panel {
     body: Component {
       WeatherView {
         controller: root
+        queue: prefs
       }
     }
   }

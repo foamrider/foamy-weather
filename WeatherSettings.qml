@@ -10,6 +10,9 @@ FoamySettingsPage {
 
   required property QtObject controller
   readonly property QtObject c: controller
+  // The FoamyPrefsQueue the controller saves through (null in the
+  // preview): a pick it refuses gives way to the saved value at once.
+  property QtObject queue: null
 
   saving: c.saving || c.savingLocation
   error: c.settingsError ? FoamyI18n.t(c.settingsError) : c.saveError ? FoamyI18n.t(c.saveError) : ""
@@ -130,6 +133,8 @@ FoamySettingsPage {
       compact: true
       label: FoamyI18n.t("Units")
       value: page.c.units
+      queue: page.queue
+      queueKey: "units"
       options: [
         {
           value: "metric",

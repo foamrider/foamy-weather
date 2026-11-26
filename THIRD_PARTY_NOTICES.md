@@ -14,7 +14,7 @@ How the lists are made:
 
 - `bin/aarch64/foamy-weather-helper`: sha256 `ce474d2696cd60f3692192f0fb224fa49debd4facd765af4e7d830db02f6a6ee`
 - `bin/x86_64/foamy-weather-helper`: sha256 `e058d77b413720160c9d422fa7eb55b3900d28e8d8e6f36a2435e0b6fe23d650`
-- `native/native.pin`: source `fba39a0dd3a8aef19caa9933d0402b35a1aacb5cf89144af00984afcc477353b`, toolchain 1.99.1
+- `native/native.pin`: source `68e9b68c356816aba0a4f91a0d4a0b652b6030901a4d604af658ac18ebf84a1a`, toolchain 1.99.1
 
 ### Crates linked into `foamy-weather-helper`
 

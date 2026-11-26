@@ -23,6 +23,9 @@ PanelKeyCatcher {
 
   required property QtObject controller
   readonly property QtObject c: controller
+  // The FoamyPrefsQueue the settings save through, for the Settings page
+  // (null in the preview).
+  property QtObject queue: null
 
   readonly property var forecastDays: c.contentActive && !c.editingLocation ? Model.forecastDays(c.report, c.now) : []
   readonly property var selectedDay: forecastDays.length ? forecastDays[Math.max(0, Math.min(c.selectedDayIndex, forecastDays.length - 1))] : null
@@ -151,10 +154,6 @@ PanelKeyCatcher {
         Qt.callLater(function () {
           if (settingsLoader.item)
             settingsLoader.item.focusBack()
-        })
-      else
-        Qt.callLater(function () {
-          view.forceActiveFocus()
         })
     }
   }
@@ -733,6 +732,7 @@ PanelKeyCatcher {
       active = true
     sourceComponent: WeatherSettings {
       controller: view.c
+      queue: view.queue
     }
   }
 }

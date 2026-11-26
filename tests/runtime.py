@@ -1,6 +1,7 @@
 """Load the real plugin offscreen on Omarchy 4.5 (foamy-kit harness) and check
 the shared service, leader election, lazy popup body, settings read through
-the schema and saving, moving a legacy searched location to state, report
+the schema and saving (a Units pick the save queue refuses gives way to the
+saved choice at once), moving a legacy searched location to state, report
 retention across a location change, the hourly header, the bar button (a
 left click opens, a right click sends the summary to
 omarchy-notification-send without coordinates, a middle click and `r` start
@@ -304,6 +305,23 @@ ShellRoot {
       && barA.saved[0].settings.animations === true, "units saved inline as the full entry: " + JSON.stringify(barA.saved))
     a.savePreference("units", "kelvin")
     shell.check(a.saveError === "That value isn't allowed." && barA.saved.length === 1, "invalid value refused")
+    // A Units pick the settings queue refuses gives way to the saved choice
+    // at once, not after the dropdown's 10 s pick hold. Without a bar entry
+    // id (the widget's and the Panel's module name empty) the queue refuses
+    // every save.
+    var units = shell.dropdown(a.popup.bodyItem, "Units")
+    shell.check(units !== null, "the Units dropdown is on the settings page")
+    if (units) {
+      var savedUnits = a.units
+      shell.widgets[0].moduleName = ""
+      a.moduleName = ""
+      units.select(savedUnits === "metric" ? "imperial" : "metric")
+      shell.check(a.saveError === "Settings can't be saved: this widget has no bar entry." && barA.saved.length === 1
+        && units.shownValue === savedUnits, "a refused Units pick shows the saved choice again at once: shows "
+        + units.shownValue + ", saved " + savedUnits + ", error " + JSON.stringify(a.saveError))
+      shell.widgets[0].moduleName = "foamy.weather"
+      a.moduleName = "foamy.weather"
+    }
     a.close()
     shell.check(shell.last(barA.hoverCalls) === false, "closing gives the bar its hover reveal back")
     shell.go(function() { return !a.opened && !a.editingLocation }, "close leaves settings", step5)
@@ -427,6 +445,15 @@ ShellRoot {
     if (item.text === text) return item
     var kids = item.children || []
     for (var i = 0; i < kids.length; i++) { var hit = findText(kids[i], text); if (hit) return hit }
+    return null
+  }
+
+  // The settings dropdown with this label.
+  function dropdown(item, label) {
+    if (!item) return null
+    if (item.label === label && item.shownValue !== undefined) return item
+    var kids = item.children || []
+    for (var i = 0; i < kids.length; i++) { var hit = dropdown(kids[i], label); if (hit) return hit }
     return null
   }
 }

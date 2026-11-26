@@ -117,6 +117,7 @@
   "Automatic location needs XDG_RUNTIME_DIR": "Automatisk posisjon krever XDG_RUNTIME_DIR",
   "Automatic location storage is not private": "Lagringsmappen for automatisk posisjon er ikke privat",
   "Couldn't save the setting.": "Kunne ikke lagre innstillingen.",
+  "The saved list in shell.json isn't valid, so it wasn't replaced.": "Den lagrede listen i shell.json er ugyldig, så den ble ikke erstattet.",
   "This plugin's helper isn't available for this CPU.": "Hjelpeprogrammet til denne utvidelsen er ikke tilgjengelig for denne prosessoren.",
   "HTTPS isn't supported on this CPU (foamy helpers need AES, carry-less multiply, AVX2, BMI2 and ADX on x86-64, or the crypto extensions on ARMv8)": "HTTPS støttes ikke på denne prosessoren (foamy-hjelpeprogrammene trenger AES, carry-less multiply, AVX2, BMI2 og ADX på x86-64, eller kryptoutvidelsene på ARMv8)"
 }
