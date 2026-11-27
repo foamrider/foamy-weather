@@ -468,6 +468,7 @@ PanelKeyCatcher {
         // A note about what is shown: loading a new place, stale data, or an error.
         Rectangle {
           id: note
+          objectName: "weatherNote"
           readonly property bool info: view.c.statusText !== "" || view.c.errorIsStale
           readonly property string message: view.c.statusText || view.c.errorText
           visible: message !== ""
@@ -483,6 +484,7 @@ PanelKeyCatcher {
             anchors.verticalCenter: parent.verticalCenter
             spacing: FoamyStyle.gap
             FoamyIcon {
+              objectName: "weatherNoteIcon"
               anchors.verticalCenter: parent.verticalCenter
               width: FoamyStyle.iconSize
               height: width

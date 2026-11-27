@@ -6,7 +6,8 @@ retention across a location change, the hourly header, the bar button (a
 left click opens, a right click sends the summary to
 omarchy-notification-send without coordinates, a middle click and `r` start
 no fetch offline; tests/fetch-runtime.py checks that they refresh online),
-the bar's hover reveal, the footer and the note offline, the search field's
+the bar's hover reveal, the footer and the note offline (its alert icon
+reads at 4.5:1 on the note's red tint), the search field's
 wiring, and the IPC target: the service entry's handler is the one live
 handler beside the widgets and every popup function and refresh act through
 it; refresh starts an idle service; settings come from its shell.json entry,
@@ -24,7 +25,9 @@ reports no connectivity), so only the location helper runs (to migrate) and
 no network request starts. The helper is still pointed at the loopback
 stand-in (tests/fakenet.py, also needs openssl), which must see no request:
 a service that fetched anyway fails the test instead of reaching MET Norway.
-The notification command is a stand-in that records its arguments.
+The notification command is a stand-in that records its arguments. The run
+uses the kit's dim-red fixture theme (tests/fixtures/themes/dim-red.toml), a
+dark theme whose raw red does not read on the note's tint.
 """
 
 import argparse
@@ -274,8 +277,9 @@ ShellRoot {
     shell.check(note !== null && note.text === "Unknown option: --x", "an error note carries its values: " + (note && note.text))
     // Its alert icon reads at 4.5:1 on the note's red tint as drawn. main()
     // runs in a dark theme with a dim red, where the raw red reads 2.48:1 there.
-    var noteBox = note ? note.parent.parent : null
-    var alert = note ? note.parent.children[0] : null
+    var noteBox = shell.find(body, "weatherNote")
+    var alert = shell.find(body, "weatherNoteIcon")
+    shell.check(noteBox !== null, "the note is found by its name")
     shell.check(alert !== null && alert.name === "triangle-alert", "an error note has its alert icon: " + (alert && alert.name))
     if (alert && noteBox) {
       var ratio = Kit.FoamyPalette.contrastRatio(alert.color, Qt.tint(Kit.FoamyPalette.background, noteBox.color))
