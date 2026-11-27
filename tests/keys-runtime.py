@@ -8,7 +8,11 @@ day cards, `s` opens Settings again and Esc closes the popup; and after the
 popup closes on Settings and opens again, Esc closes it. Keys left with the
 hidden page still pass through it to the view, except Esc: the page takes
 it for its own Back, and the popup stays open. (`r` is the same text-key
-handler as `s`, and offline it fetches nothing to see.)
+handler as `s`, and offline it fetches nothing to see.) In the place search
+↓ draws the keys' accent border on the suggestion it moves to, and the
+pointer moved onto a suggestion or inside the one the keys came to takes
+the cursor without it, as do new results; the arrows draw it on the band's
+Settings and the footer's Refresh.
 
   python3 tests/keys-runtime.py
 
@@ -38,6 +42,7 @@ import QtTest
 import Quickshell
 import "harness"
 import "plugin" as Weather
+import "plugin/kit" as Kit
 
 ShellRoot {
   id: shell
@@ -147,9 +152,92 @@ ShellRoot {
     shell.key(Qt.Key_Right)
     shell.key(Qt.Key_Right)
     shell.check(a.selectedDayIndex === 1, "an arrow then walks the day cards: day " + a.selectedDayIndex + ", keys with " + shell.named(shell.keys()))
+    shell.bandKeys()
     shell.key(Qt.Key_S)
     shell.check(a.editingLocation, "`s` then opens Settings again: keys with " + shell.named(shell.keys()))
-    shell.leaveFromField(step2)
+    shell.searchKeys(function() { shell.leaveFromField(step2) })
+  }
+
+  // The band's Settings and the footer's Refresh (inert: offline) draw the
+  // keys' accent border when the arrows reach them, each on its own.
+  function bandKeys() {
+    var band = shell.findWhere(shell.body(), function(i) { return i.settingsButton !== undefined && i.settingsHasCursor !== undefined })
+    var settings = band ? band.settingsButton : null
+    var refresh = shell.find(shell.body(), "foamyFooterRefresh")
+    shell.check(settings !== null && refresh !== null, "the band's Settings and the footer's Refresh are found")
+    if (!settings || !refresh) return
+    var bordered = function() {
+      return [["settings", settings], ["refresh", refresh]].filter(function(p) { return p[1].border.width === Kit.FoamyStyle.borderWidth }).map(function(p) { return p[0] })
+    }
+    for (var i = 0; i < 10 && !settings.hasCursor; i++) shell.key(Qt.Key_Right)
+    shell.check(settings.hasCursor && JSON.stringify(bordered()) === JSON.stringify(["settings"]), "the arrows on Settings: its keys' border, on it alone: " + JSON.stringify(bordered()))
+    shell.key(Qt.Key_Right)
+    shell.check(refresh.hasCursor && JSON.stringify(bordered()) === JSON.stringify(["refresh"]), "the arrows on Refresh: its keys' border, on it alone: " + JSON.stringify(bordered()))
+  }
+  function findWhere(item, match) {
+    if (!item) return null
+    if (match(item)) return item
+    var kids = item.children || []
+    for (var i = 0; i < kids.length; i++) { var hit = findWhere(kids[i], match); if (hit) return hit }
+    return null
+  }
+
+  // The suggestions that draw the keys' accent border (by name).
+  function suggestions() {
+    var found = []
+    var walk = function(item) {
+      if (item.modelData !== undefined && item.modelData.latitude !== undefined && item.borderSpec !== undefined) found.push(item)
+      var kids = item.children || []
+      for (var i = 0; i < kids.length; i++) walk(kids[i])
+    }
+    walk(shell.page())
+    return found
+  }
+  function bordered() {
+    return shell.suggestions().filter(function(s) { return s.borderTop > 0 && Qt.colorEqual(s.borderSpec.color, s.accent) }).map(function(s) { return s.modelData.name })
+  }
+  // Fixture results (offline, no search runs): ↓ in the field moves the
+  // cursor and draws the keys' border there; the pointer on another result
+  // takes the cursor without it; ↑ draws it again; ↓ onto the result under
+  // the resting pointer draws it, and a pointer move inside that result
+  // clears it; new results clear it too.
+  function searchKeys(next) {
+    var a = shell.panel()
+    shell.go(function() { return shell.field() !== null && shell.field().visible && shell.field().width > 0 }, "Settings shows the search field", function() {
+      shell.click(shell.field())
+      a.locationSuggestions = [{ name: "Bergen", description: "Vestland", latitude: 60.39, longitude: 5.32 },
+        { name: "Bergen auf Rügen", description: "Germany", latitude: 54.42, longitude: 13.43 },
+        { name: "Bergen op Zoom", description: "Netherlands", latitude: 51.49, longitude: 4.29 }]
+      a.suggestionIndex = 0
+      shell.go(function() { return shell.field().inputActiveFocus && shell.suggestions().length === 3 && shell.suggestions()[2].height > 0 }, "the suggestions show, the field has the keys", function() {
+        shell.check(JSON.stringify(shell.bordered()) === "[]", "the first result, not moved by the keys: no border: " + JSON.stringify(shell.bordered()))
+        shell.key(Qt.Key_Down)
+        shell.check(a.suggestionIndex === 1 && JSON.stringify(shell.bordered()) === JSON.stringify(["Bergen auf Rügen"]) && shell.suggestions()[1].borderTop === Kit.FoamyStyle.borderWidth, "↓: the keys' border on the second result alone: " + JSON.stringify(shell.bordered()))
+        var third = shell.suggestions()[2]
+        ev.mouseMove(third, third.width / 2, third.height / 2, -1, Qt.NoButton, Qt.NoModifier)
+        shell.check(a.suggestionIndex === 2 && JSON.stringify(shell.bordered()) === "[]", "the pointer on the third result: the cursor there, no border: " + a.suggestionIndex + " " + JSON.stringify(shell.bordered()))
+        shell.key(Qt.Key_Up)
+        shell.check(a.suggestionIndex === 1 && JSON.stringify(shell.bordered()) === JSON.stringify(["Bergen auf Rügen"]), "↑: the keys' border again: " + JSON.stringify(shell.bordered()))
+        shell.key(Qt.Key_Down)
+        shell.check(a.suggestionIndex === 2 && JSON.stringify(shell.bordered()) === JSON.stringify(["Bergen op Zoom"]), "↓ onto the result under the resting pointer: its border: " + JSON.stringify(shell.bordered()))
+        ev.mouseMove(third, third.width / 2 + 3, third.height / 2, -1, Qt.NoButton, Qt.NoModifier)
+        shell.check(a.suggestionIndex === 2 && JSON.stringify(shell.bordered()) === "[]", "the pointer moved inside that result: no border: " + a.suggestionIndex + " " + JSON.stringify(shell.bordered()))
+        // The pointer off the results, so the new rows get no hover.
+        ev.mouseMove(shell.field(), 4, 4, -1, Qt.NoButton, Qt.NoModifier)
+        shell.key(Qt.Key_Up)
+        shell.check(JSON.stringify(shell.bordered()) === JSON.stringify(["Bergen auf Rügen"]), "↑ once more: the border: " + JSON.stringify(shell.bordered()))
+        a.locationSuggestions = [{ name: "Bergenfield", description: "New Jersey", latitude: 40.93, longitude: -74.0 },
+          { name: "Bergen County", description: "New Jersey", latitude: 40.96, longitude: -74.07 }]
+        a.suggestionIndex = 0
+        shell.go(function() { return shell.suggestions().length === 2 && shell.suggestions()[1].height > 0 }, "the new results show", function() {
+          shell.check(JSON.stringify(shell.bordered()) === "[]", "new results: no border: " + JSON.stringify(shell.bordered()))
+          a.locationSuggestions = []
+          // leaveFromField types into the field; start it from an empty search.
+          a.clearSearch()
+          next()
+        })
+      })
+    })
   }
 
   function step2() {

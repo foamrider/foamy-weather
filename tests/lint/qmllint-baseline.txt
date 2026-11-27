@@ -80,7 +80,7 @@ WeatherSettings.qml: missing-property: Member "settingsError" not found on type 
 WeatherSettings.qml: missing-property: Member "settingsError" not found on type "QObject" | error: c.settingsError ? FoamyI18n.t(c.settingsError) : c.saveError ? FoamyI18n.t(c.saveError) : ""
 WeatherSettings.qml: missing-property: Member "settingsError" not found on type WeatherSettings::c with type QObject | page.c.settingsError = pasteError
 WeatherSettings.qml: missing-property: Member "suggestionIndex" not found on type "QObject" | hasCursor: index === page.c.suggestionIndex
-WeatherSettings.qml: missing-property: Member "suggestionIndex" not found on type WeatherSettings::c with type QObject | onHovered: page.c.suggestionIndex = index
+WeatherSettings.qml: missing-property: Member "suggestionIndex" not found on type WeatherSettings::c with type QObject | page.c.suggestionIndex = index
 WeatherSettings.qml: missing-property: Member "units" not found on type "QObject" | value: page.c.units
 WeatherView.qml: block-scope-var-declaration: var declaration in block scope is hoisted to function scope | for (var i = 0; i < displayHours.length; i++) {
 WeatherView.qml: confusing-expression-statement: Expression statement has no obvious effect. | font

@@ -13,6 +13,9 @@ FoamySettingsPage {
   // The FoamyPrefsQueue the controller saves through (null in the
   // preview): a pick it refuses gives way to the saved value at once.
   property QtObject queue: null
+  // ↑/↓ in the search field moved the suggestion cursor last: it draws the
+  // keys' accent border. The pointer and new results clear it.
+  property bool suggestionByKeys: false
 
   saving: c.saving || c.savingLocation
   error: c.settingsError ? FoamyI18n.t(c.settingsError) : c.saveError ? FoamyI18n.t(c.saveError) : ""
@@ -71,9 +74,11 @@ FoamySettingsPage {
           event.accepted = true
         } else if (event.key === Qt.Key_Down) {
           page.c.moveSuggestion(1)
+          page.suggestionByKeys = true
           event.accepted = true
         } else if (event.key === Qt.Key_Up) {
           page.c.moveSuggestion(-1)
+          page.suggestionByKeys = true
           event.accepted = true
         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
           page.c.commitLocation()
@@ -84,6 +89,7 @@ FoamySettingsPage {
 
     Repeater {
       model: page.c.automaticLocation ? [] : page.c.locationSuggestions
+      onModelChanged: page.suggestionByKeys = false
 
       FoamyCursorSurface {
         id: suggestion
@@ -92,7 +98,11 @@ FoamySettingsPage {
         width: parent.width
         height: suggestionText.implicitHeight + Style.space(12)
         hasCursor: index === page.c.suggestionIndex
-        onHovered: page.c.suggestionIndex = index
+        byKeys: page.suggestionByKeys
+        onHovered: {
+          page.c.suggestionIndex = index
+          page.suggestionByKeys = false
+        }
         onClicked: page.c.pickSuggestion(modelData)
 
         Text {

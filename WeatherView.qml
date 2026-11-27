@@ -205,6 +205,7 @@ PanelKeyCatcher {
         width: parent.width
         centered: true
         settingsHasCursor: cursor.at(view.settingsStop)
+        cursorByKeys: cursor.byKeys
         onSettingsClicked: view.c.startEditingLocation()
         onSettingsHovered: function (hovered) {
           if (hovered)
@@ -707,6 +708,7 @@ PanelKeyCatcher {
           refreshEnabled: view.c.networkReady
           refreshTooltip: view.c.loading ? FoamyI18n.t("Refreshing…") : (!view.c.networkReady ? FoamyI18n.t("Waiting for network…") : FoamyI18n.t("Refresh"))
           refreshHasCursor: cursor.at(view.refreshStop)
+          cursorByKeys: cursor.byKeys
           onRefreshHovered: function (hovered) {
             if (hovered)
               cursor.hover(view.refreshStop)
