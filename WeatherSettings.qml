@@ -99,14 +99,11 @@ FoamySettingsPage {
         height: suggestionText.implicitHeight + Style.space(12)
         hasCursor: index === page.c.suggestionIndex
         byKeys: page.suggestionByKeys
-        onHovered: page.c.suggestionIndex = index
-        onClicked: page.c.pickSuggestion(modelData)
-        Connections {
-          target: suggestion
-          function onHovered() {
-            page.suggestionByKeys = false
-          }
+        onHovered: {
+          page.c.suggestionIndex = index
+          page.suggestionByKeys = false
         }
+        onClicked: page.c.pickSuggestion(modelData)
 
         Text {
           id: suggestionText
