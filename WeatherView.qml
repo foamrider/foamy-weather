@@ -468,6 +468,7 @@ PanelKeyCatcher {
         // A note about what is shown: loading a new place, stale data, or an error.
         Rectangle {
           id: note
+          objectName: "weatherNote"
           readonly property bool info: view.c.statusText !== "" || view.c.errorIsStale
           readonly property string message: view.c.statusText || view.c.errorText
           visible: message !== ""
@@ -483,11 +484,12 @@ PanelKeyCatcher {
             anchors.verticalCenter: parent.verticalCenter
             spacing: FoamyStyle.gap
             FoamyIcon {
+              objectName: "weatherNoteIcon"
               anchors.verticalCenter: parent.verticalCenter
               width: FoamyStyle.iconSize
               height: width
               name: note.info ? "info" : "triangle-alert"
-              color: note.info ? Commons.Color.accent : Commons.Color.urgent
+              color: note.info ? Commons.Color.accent : FoamyPalette.onSurface(Commons.Color.urgent, Qt.tint(FoamyPalette.background, note.color))
             }
             Text {
               anchors.verticalCenter: parent.verticalCenter
