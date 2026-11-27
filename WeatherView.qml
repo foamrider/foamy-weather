@@ -487,7 +487,7 @@ PanelKeyCatcher {
               width: FoamyStyle.iconSize
               height: width
               name: note.info ? "info" : "triangle-alert"
-              color: note.info ? Commons.Color.accent : Commons.Color.urgent
+              color: note.info ? Commons.Color.accent : FoamyPalette.onSurface(Commons.Color.urgent, Qt.tint(FoamyPalette.background, note.color))
             }
             Text {
               anchors.verticalCenter: parent.verticalCenter

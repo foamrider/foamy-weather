@@ -272,6 +272,15 @@ ShellRoot {
     shell.check(note !== null, "a stale report shows its note")
     Weather.WeatherService.setError("Unknown option: %1", ["--x"])
     shell.check(note !== null && note.text === "Unknown option: --x", "an error note carries its values: " + (note && note.text))
+    // Its alert icon reads at 4.5:1 on the note's red tint as drawn. main()
+    // runs in a dark theme with a dim red, where the raw red reads 2.48:1 there.
+    var noteBox = note ? note.parent.parent : null
+    var alert = note ? note.parent.children[0] : null
+    shell.check(alert !== null && alert.name === "triangle-alert", "an error note has its alert icon: " + (alert && alert.name))
+    if (alert && noteBox) {
+      var ratio = Kit.FoamyPalette.contrastRatio(alert.color, Qt.tint(Kit.FoamyPalette.background, noteBox.color))
+      shell.check(ratio >= 4.5, "the error note's icon " + alert.color + " reads " + ratio.toFixed(2) + ":1 on its tint (4.5:1 needed)")
+    }
     Weather.WeatherService.setError("")
     shell.check(note !== null && note.text === "", "no note without a message: " + (note && note.text))
     // `s` opens Settings.
@@ -470,6 +479,9 @@ def main():
         SHELL,
         plugin=ROOT,
         prefix="foamy-weather-runtime-",
+        # The kit's dark theme with a dim red: the error note's icon must
+        # lighten to read on its tint.
+        theme=str(KIT / "tests/fixtures/themes/dim-red.toml"),
         system_bus="private",
         fakebin={"omarchy-notification-send": notify},
     )
