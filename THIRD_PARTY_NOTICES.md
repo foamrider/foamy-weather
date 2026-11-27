@@ -12,9 +12,9 @@ How the lists are made:
 
 ## `foamy-weather-helper`
 
-- `bin/aarch64/foamy-weather-helper`: sha256 `ce474d2696cd60f3692192f0fb224fa49debd4facd765af4e7d830db02f6a6ee`
-- `bin/x86_64/foamy-weather-helper`: sha256 `e058d77b413720160c9d422fa7eb55b3900d28e8d8e6f36a2435e0b6fe23d650`
-- `native/native.pin`: source `1a31ab1bf9cca107131d37bca681b201da3a7aec7fe6878890649a25274f0c4c`, toolchain 1.99.1
+- `bin/aarch64/foamy-weather-helper`: sha256 `08c9eb34a54d64c496c16efbe63228adbe1c8dec130b1910439403fbaad2dd96`
+- `bin/x86_64/foamy-weather-helper`: sha256 `e7f3844652772aa0012418de3fe205b8d1f95f4feb0b4eba423f767738e93a24`
+- `native/native.pin`: source `15b4380736b7257f6b0d951355a509970e7199325f78fa588dba44212c2c54a0`, toolchain 1.99.1
 
 ### Crates linked into `foamy-weather-helper`
 
@@ -60,7 +60,7 @@ First-party crates (not third-party code, listed for completeness):
 
 | Crate | Version | Source | License | Arches | Notices |
 |---|---|---|---|---|---|
-| foamy-helper | 0.1.2 | `kit/rust/foamy-helper/` (foamy-kit, vendored) | MIT | both | [N17](#n17) |
+| foamy-helper | 0.1.3 | `kit/rust/foamy-helper/` (foamy-kit, vendored) | MIT | both | [N17](#n17) |
 | foamy-weather-helper | 0.1.0 | `native/` (this plugin) | MIT | both | `LICENSE` |
 
 ### Toolchain code linked into `foamy-weather-helper`
@@ -1240,7 +1240,7 @@ Copyright 2013 The Rust Project Developers. See the COPYRIGHT
 
 ### N17
 
-Shipped by: foamy-helper 0.1.2 (foamy-kit's LICENSE).
+Shipped by: foamy-helper 0.1.3 (foamy-kit's LICENSE).
 
 ```text
 MIT License
